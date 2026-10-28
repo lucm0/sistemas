@@ -447,14 +447,14 @@ table.tab tr.clicavel { cursor: pointer; }
  * (BCDB). Os módulos de Ordem de Serviço e Mesas/Delivery aparecem conforme o
  * ramo escolhido na primeira abertura.
  */
-const COLECOES = ['produtos', 'clientes', 'fornecedores', 'vendas', 'caixas', 'contas', 'os', 'comandas', 'agenda'];
+const COLECOES = ['produtos', 'clientes', 'fornecedores', 'vendas', 'caixas', 'contas', 'os', 'comandas', 'agenda', 'vales'];
 // Vazio = convite do curso desligado (decisão do Lucas, 11/10/2026). Cada arquivo vendido leva este
 // link para sempre: só preencher com um endereço que seja nosso, de preferência o domínio próprio.
 const LINK_CURSO = '';
 const LIMITE_DEMO = { produtos: 20, vendas: 30 };
 // Versão do sistema. Sobe junto com site/versao.json: a versão instalada (Windows/Mac) compara as duas
 // na abertura e avisa que há nova versão; a do site se atualiza sozinha.
-const VERSAO = '1.1.0';
+const VERSAO = '1.2.0';
 const URL_VERSAO = 'https://lucm0.github.io/sistemas/versao.json';
 const URL_INSTALAR = 'https://lucm0.github.io/sistemas/bem-vindo/#instalar';
 const URL_AVALIAR = 'https://myaccount.mercadolivre.com.br/my_purchases/list';
@@ -504,7 +504,7 @@ function app() {
     pronto: false, rota: 'inicio', menuAberto: false,
     cfg: null, licenca: null, versao: VERSAO, novaVersao: null, urlInstalar: URL_INSTALAR, urlAvaliar: URL_AVALIAR,
     backupAuto: { suporte: '', pasta: '', erro: '' },
-    produtos: [], clientes: [], fornecedores: [], vendas: [], caixas: [], contas: [], os: [], comandas: [], agenda: [], diaAgenda: hojeISO(),
+    produtos: [], clientes: [], fornecedores: [], vendas: [], caixas: [], contas: [], os: [], comandas: [], agenda: [], vales: [], diaAgenda: hojeISO(),
     toastMsg: '', toastTipo: 'ok', _toastT: null,
     modal: null,            // nome do modal aberto
     form: {},               // formulário do modal
@@ -515,7 +515,7 @@ function app() {
     periodo: { de: hojeISO().slice(0, 8) + '01', ate: hojeISO() },
     // PDV
     pdv: { busca: '', itens: [], clienteId: '', desconto: '', vendedor: '', obs: '', sugestoes: [], sel: 0, origem: 'pdv', refId: null, acrescimo: 0, acrescimoRotulo: '' },
-    pag: { linhas: [], forma: 'dinheiro', valor: '', parcelas: 1, primeiroVenc: '' },
+    pag: { linhas: [], forma: 'dinheiro', valor: '', parcelas: 1, primeiroVenc: '', valeCodigo: '' },
     ultimaVenda: null,
     // mesas / delivery
     comandaAtual: null, buscaComanda: '', sugComanda: [],
@@ -909,8 +909,9 @@ function app() {
       const pagasDinheiro = r2(this.contas.filter(c => c.tipo === 'pagar' && c.pagoCaixaId === cx.id && c.forma === 'dinheiro').reduce((s, c) => s + (c.valorPago || 0), 0));
       const sangrias = r2(cx.movs.filter(m => m.tipo === 'sangria').reduce((s, m) => s + m.valor, 0));
       const reforcos = r2(cx.movs.filter(m => m.tipo === 'suprimento').reduce((s, m) => s + m.valor, 0));
-      const esperadoDinheiro = r2(cx.valorInicial + (porForma.dinheiro || 0) + recebDinheiro + reforcos - sangrias - pagasDinheiro);
-      return { vendas: vendas.length, total: r2(vendas.reduce((s, v) => s + v.total, 0)), porForma, recebDinheiro, pagasDinheiro, sangrias, reforcos, esperadoDinheiro };
+      const devolucoes = r2(cx.movs.filter(m => m.tipo === 'devolucao').reduce((s, m) => s + m.valor, 0));
+      const esperadoDinheiro = r2(cx.valorInicial + (porForma.dinheiro || 0) + recebDinheiro + reforcos - sangrias - pagasDinheiro - devolucoes);
+      return { vendas: vendas.length, total: r2(vendas.reduce((s, v) => s + v.total, 0)), porForma, recebDinheiro, pagasDinheiro, sangrias, reforcos, devolucoes, esperadoDinheiro };
     },
     fecharCaixaModal() { this.form = { contado: '' }; this.modal = 'fecharCaixa'; },
     async fecharCaixa() {
@@ -923,7 +924,7 @@ function app() {
       if (this.cfg.backupAuto && this.cfg.backupAuto.pasta) { if (await this.backupAutomatico('caixa')) this.toast('Caixa fechado. Backup do dia salvo em "' + this.cfg.backupAuto.pasta + '".'); }
       else if (this.diasSemBackup() >= 1) this.toast('Caixa fechado. Recomendamos salvar um backup agora (Configurações).');
     },
-    nomeForma(id) { const f = this.cfg.pagamentos.find(p => p.id === id); return f ? f.nome : id; },
+    nomeForma(id) { if (id === 'vale') return 'Vale-compra'; const f = this.cfg.pagamentos.find(p => p.id === id); return f ? f.nome : id; },
     garantirCaixa(depois) {
       if (this.caixaAberto()) return true;
       this._depoisAbrirCaixa = depois; this.abrirCaixaModal(); return false;
@@ -1012,6 +1013,16 @@ function app() {
       if (!v) v = this.faltaPdv();
       if (!v) return;
       if (this.pag.forma !== 'dinheiro' && v > this.faltaPdv() + 0.001) { this.toast('Só pagamento em dinheiro pode passar do total (troco).', 'erro'); return; }
+      if (this.pag.forma === 'vale') {
+        const vale = this.valePorCodigo(this.pag.valeCodigo);
+        if (!vale) { this.toast('Vale-compra não encontrado. Confira o código impresso no vale.', 'erro'); return; }
+        if (vale.saldo <= 0.001) { this.toast('Esse vale já foi usado por completo.', 'erro'); return; }
+        if (this.pag.linhas.some(l => l.valeId === vale.id)) { this.toast('Esse vale já está nesta venda.', 'erro'); return; }
+        v = Math.min(v, vale.saldo);
+        this.pag.linhas.push({ forma: 'vale', valor: r2(v), parcelas: 1, valeId: vale.id, valeCodigo: vale.codigo });
+        this.pag.valor = ''; this.pag.valeCodigo = ''; this.pag.forma = 'dinheiro';
+        return;
+      }
       if (this.pag.forma === 'crediario') {
         if (!this.pdv.clienteId) { this.toast('Para crediário/fiado escolha o cliente da venda.', 'erro'); return; }
         const c = this.cliente(this.pdv.clienteId);
@@ -1035,11 +1046,13 @@ function app() {
         id: this.proximo('venda'), numero: 0, data: agoraISO(), origem: this.pdv.origem, refId: this.pdv.refId,
         itens: this.pdv.itens.map(i => ({ produtoId: i.produtoId, variacaoId: i.variacaoId, nome: i.nome, qtd: i.qtd, preco: i.preco, custo: i.custo, unidade: i.unidade, obs: i.obs || '' })),
         subtotal: this.subtotalPdv(), desconto: this.descontoPdv(), acrescimo: Number(this.pdv.acrescimo) || 0, acrescimoRotulo: this.pdv.acrescimoRotulo || '',
-        total: this.totalPdv(), pagamentos: this.pag.linhas.map(l => ({ forma: l.forma, valor: l.valor, parcelas: l.parcelas })), troco: this.trocoPdv(),
+        total: this.totalPdv(), pagamentos: this.pag.linhas.map(l => ({ forma: l.forma, valor: l.valor, parcelas: l.parcelas, valeId: l.valeId })), troco: this.trocoPdv(),
         clienteId: this.pdv.clienteId || null, vendedor: this.pdv.vendedor || '', caixaId: cx ? cx.id : null, obs: this.pdv.obs || '', cancelada: false,
       };
       venda.numero = venda.id;
       for (const i of venda.itens) this.baixarEstoque(i, 1);
+      // vale-compra usado como pagamento: abate o saldo e registra o uso
+      for (const l of this.pag.linhas.filter(l => l.forma === 'vale')) { const vale = this.vales.find(x => x.id === l.valeId); if (vale) { vale.saldo = r2(vale.saldo - l.valor); vale.usos = vale.usos || []; vale.usos.push({ vendaId: venda.id, valor: l.valor, data: venda.data }); } }
       // crediário vira contas a receber (carnê)
       for (const l of this.pag.linhas.filter(l => l.forma === 'crediario')) {
         const n = l.parcelas, base = Math.floor(l.valor / n * 100) / 100;
@@ -1052,7 +1065,7 @@ function app() {
       if(atendimento){atendimento.status='atendido';atendimento.vendaId=venda.id;venda.comissaoPct=Math.max(0,Math.min(100,num(this.cfg.comissoes[atendimento.profissional])));}
       if (venda.origem === 'os') { const o = this.os.find(x => x.id === venda.refId); if (o) { o.vendaId = venda.id; this.mudarStatusOS(o, 'Entregue', true); } }
       if (venda.origem === 'mesa' || venda.origem === 'delivery') { const c = this.comandas.find(x => x.id === venda.refId); if (c) { c.status = 'fechada'; c.vendaId = venda.id; c.fechadaEm = agoraISO(); this.comandaAtual = null; } }
-      await this.salvar('vendas', 'produtos', 'contas', 'os', 'comandas', 'agenda', 'cfg');
+      await this.salvar('vendas', 'produtos', 'contas', 'os', 'comandas', 'agenda', 'cfg', 'vales');
       this.ultimaVenda = venda;
       this.modal = 'vendaOk';
       const origem = venda.origem;
@@ -1070,15 +1083,74 @@ function app() {
     },
     cancelarVenda(v) {
       if(v.cancelada)return;
+      if ((v.devolucoes || []).length) { this.toast('Esta venda já tem devolução registrada; não dá para cancelar por inteiro.', 'erro'); return; }
       this.pedirConfirmacao('Cancelar a venda nº ' + v.numero + '? O estoque volta e as parcelas em aberto do crediário são apagadas.', async () => {
         v.cancelada = true; v.canceladaEm = agoraISO();
         for (const i of v.itens) this.baixarEstoque(i, -1);
+        for (const p of v.pagamentos.filter(p => p.forma === 'vale' && p.valeId)) { const vale = this.vales.find(x => x.id === p.valeId); if (vale) { vale.saldo = r2(vale.saldo + p.valor); vale.usos = (vale.usos || []).filter(u => u.vendaId !== v.id); } }
         this.contas = this.contas.filter(c => !(c.vendaId === v.id && !c.pagoEm));
         if(v.origem==='agenda'){const a=this.agenda.find(a=>a.id===v.refId && a.vendaId===v.id);if(a){a.vendaId=null;a.status='confirmado';}}
-        await this.salvar('vendas', 'produtos', 'contas', 'agenda'); this.fecharModal(); this.toast('Venda cancelada.');
+        await this.salvar('vendas', 'produtos', 'contas', 'agenda', 'vales'); this.fecharModal(); this.toast('Venda cancelada.');
       }, true);
     },
     verVenda(v) { this.form = { venda: v }; this.modal = 'verVenda'; },
+
+    /* ─────────── devolução parcial e vale-compra ───────────
+     * Devolver 1 item de uma venda de 3 não é cancelar a venda: o item volta ao estoque, a venda guarda
+     * a devolução (data, itens, valor) e o cliente recebe o valor como VALE-COMPRA (crédito com código,
+     * usado como forma de pagamento no PDV) ou em dinheiro (sai do caixa aberto). O valor devolvido
+     * respeita o desconto da venda (proporcional ao total pago). */
+    devolvidoItem(v, idx) { return (v.devolucoes || []).reduce((s, d) => s + (d.itens.find(i => i.idx === idx) || { qtd: 0 }).qtd, 0); },
+    totalDevolvido(v) { return r2((v.devolucoes || []).reduce((s, d) => s + d.total, 0)); },
+    fatorDevolucao(v) { return v.subtotal ? Math.max(0, Math.min(1, (v.total - (v.acrescimo || 0)) / v.subtotal)) : 1; },
+    abrirDevolucao(v) {
+      if (v.cancelada) return;
+      const itens = v.itens.map((i, idx) => ({ idx, nome: i.nome, preco: i.preco, unidade: i.unidade || 'un', maximo: r2(i.qtd - this.devolvidoItem(v, idx)), qtd: '' })).filter(i => i.maximo > 0);
+      if (!itens.length) { this.toast('Todos os itens desta venda já foram devolvidos.', 'erro'); return; }
+      this.form = { venda: v, itens, forma: 'vale', motivo: '', fator: this.fatorDevolucao(v) };
+      this.modal = 'devolucao';
+    },
+    totalDevolucaoForm() { const f = this.form; if (!f || !f.itens) return 0; return r2(f.itens.reduce((s, i) => s + Math.min(num(i.qtd), i.maximo) * i.preco, 0) * f.fator); },
+    novoCodigoVale() { return 'VALE-' + String(this.proximo('vale')).padStart(4, '0'); },
+    valePorCodigo(codigo) { const c = String(codigo || '').trim().toUpperCase().replace(/\s+/g, ''); if (!c) return null; return this.vales.find(v => v.codigo.replace(/\s+/g, '') === c && !v.cancelado) || null; },
+    valesAbertos() { return this.vales.filter(v => !v.cancelado && v.saldo > 0.001); },
+    async registrarDevolucao() {
+      const f = this.form, v = f.venda;
+      const itens = f.itens.map(i => ({ idx: i.idx, nome: i.nome, preco: i.preco, qtd: num(i.qtd) })).filter(i => i.qtd > 0);
+      if (!itens.length) { this.toast('Informe a quantidade devolvida de pelo menos um item.', 'erro'); return; }
+      const estourado = itens.find(i => i.qtd > f.itens.find(x => x.idx === i.idx).maximo + 0.001);
+      if (estourado) { this.toast('"' + estourado.nome + '": a quantidade passa do que foi vendido.', 'erro'); return; }
+      const total = this.totalDevolucaoForm();
+      if (total <= 0) { this.toast('O valor da devolução ficou zero.', 'erro'); return; }
+      const cx = this.caixaAberto();
+      if (f.forma === 'dinheiro' && !cx) { this.toast('Para devolver em dinheiro, abra o caixa primeiro.', 'erro'); return; }
+      const dev = { id: Date.now(), data: agoraISO(), itens, total, forma: f.forma, motivo: (f.motivo || '').trim(), valeId: null, caixaId: cx ? cx.id : null };
+      for (const i of itens) { const orig = v.itens[i.idx]; this.baixarEstoque({ produtoId: orig.produtoId, variacaoId: orig.variacaoId, qtd: i.qtd }, -1); }
+      let vale = null;
+      if (f.forma === 'vale') {
+        vale = { id: Date.now() + 1, codigo: this.novoCodigoVale(), valor: total, saldo: total, clienteId: v.clienteId || null, vendaId: v.id, criadoEm: dev.data, usos: [], cancelado: false };
+        this.vales.push(vale); dev.valeId = vale.id;
+      } else {
+        cx.movs.push({ tipo: 'devolucao', valor: total, motivo: 'Devolução da venda nº ' + v.numero + (dev.motivo ? ' — ' + dev.motivo : ''), data: dev.data });
+      }
+      v.devolucoes = v.devolucoes || []; v.devolucoes.push(dev);
+      await this.salvar('vendas', 'produtos', 'vales', 'caixas', 'cfg');
+      this.form = { venda: v, vale };
+      this.modal = vale ? 'valeOk' : 'verVenda';
+      this.toast(vale ? 'Devolução registrada. Vale ' + vale.codigo + ' de ' + this.brl(total) + ' gerado.' : 'Devolução registrada: ' + this.brl(total) + ' saíram do caixa.');
+    },
+    async cancelarVale(vale) {
+      this.pedirConfirmacao('Cancelar o vale ' + vale.codigo + ' (saldo ' + this.brl(vale.saldo) + ')? O cliente não poderá mais usá-lo.', async () => { vale.cancelado = true; vale.canceladoEm = agoraISO(); await this.salvar('vales'); this.toast('Vale cancelado.'); }, true);
+    },
+    imprimirVale(vale) {
+      const c = this.cliente(vale.clienteId);
+      const h = this.cabecalhoCupom() + '<div class="c b g">VALE-COMPRA</div><div class="c g b" style="font-size:1.6em;letter-spacing:1px;margin:6px 0">' + esc(vale.codigo) + '</div>'
+        + '<table><tr><td>Valor</td><td class="r">' + this.n2(vale.valor) + '</td></tr><tr><td>Saldo disponível</td><td class="r b">' + this.n2(vale.saldo) + '</td></tr></table><hr>'
+        + (c ? '<div>Cliente: ' + esc(c.nome) + '</div>' : '') + '<div>Emitido em ' + this.dataHora(vale.criadoEm) + ' — ref. venda nº ' + esc(vale.vendaId) + '</div>'
+        + '<div class="c" style="margin-top:8px">Apresente este código no caixa para usar o crédito em novas compras. Não é trocado por dinheiro.</div>';
+      this.imprimir(h);
+    },
+    devolucoesPeriodo() { const out = []; for (const v of this.vendas) for (const d of (v.devolucoes || [])) if (this.diaLocal(d.data) >= this.periodo.de && this.diaLocal(d.data) <= this.periodo.ate) out.push(d); return out; },
     lucroVenda(v) { return r2(v.total - (v.acrescimo || 0) - v.itens.reduce((s, i) => s + i.qtd * (i.custo || 0), 0) - this.taxasVenda(v)); },
     taxasVenda(v) { return r2(v.pagamentos.reduce((s, p) => { const f = this.cfg.pagamentos.find(x => x.id === p.forma); return s + (f ? p.valor * (f.taxa || 0) / 100 : 0); }, 0)); },
 
@@ -1171,7 +1243,8 @@ function app() {
     resumoPeriodo() {
       const vs = this.vendasPeriodo(); const total = r2(vs.reduce((s, v) => s + v.total, 0));
       const lucro = r2(vs.reduce((s, v) => s + this.lucroVenda(v), 0));
-      return { qtd: vs.length, total, ticket: vs.length ? r2(total / vs.length) : 0, lucro, margem: total ? r2(lucro / total * 100) : 0 };
+      const devs = this.devolucoesPeriodo(); const devolucoes = r2(devs.reduce((s, d) => s + d.total, 0));
+      return { qtd: vs.length, total, ticket: vs.length ? r2(total / vs.length) : 0, lucro, margem: total ? r2(lucro / total * 100) : 0, devolucoes, qtdDevolucoes: devs.length };
     },
     rankingProdutos() {
       const m = {};
@@ -1397,7 +1470,8 @@ function app() {
     diasSemBackup() { return this.cfg && this.cfg.backupEm ? Math.floor((Date.now() - new Date(this.cfg.backupEm).getTime()) / 86400000) : 999; },
     temDados() { return this.vendas.length + this.produtos.length + this.clientes.length > 0; },
     conteudoBackup() {
-      const dados = { app: 'balcao-certo', versao: 1, geradoEm: agoraISO(), cfg: this.cfg, licenca: this.licenca };
+      const cfg = Object.assign({}, this.cfg); delete cfg.backupAuto;   // a pasta pertence a este aparelho
+      const dados = { app: 'balcao-certo', versao: 1, geradoEm: agoraISO(), cfg, licenca: this.licenca };
       for (const c of COLECOES) dados[c] = this[c];
       return JSON.stringify(dados);
     },
@@ -1414,17 +1488,24 @@ function app() {
     async iniciarBackupAuto() {
       this.backupAuto.suporte = this.suporteBackupAuto();
       window.BC_pastaBackup = nome => this.definirPastaBackup(nome);
-      window.BC_backupSalvo = (ok, erro) => { if (ok) this.registrarBackupAuto(); else { this.backupAuto.erro = erro || 'falhou'; this.toast('Backup automático falhou: ' + this.backupAuto.erro, 'erro'); } };
+      window.BC_backupSalvo = (ok, erro) => { if (this._backupPendente) this._backupPendente(ok, erro); };
       if (!this.cfg || !this.cfg.backupAuto || !this.cfg.backupAuto.pasta) return;
       this.backupAuto.pasta = this.cfg.backupAuto.pasta;
-      if (this.backupAuto.suporte === 'pasta') this._pastaBackup = await BCDB.lerBruto('backupPasta');
-      if ((this.cfg.backupAuto.ultimo || '').slice(0, 10) !== hojeISO() && this.temDados()) this.backupAutomatico('abertura');
+      if (this.backupAuto.suporte === 'pasta') {
+        this._pastaBackup = await BCDB.lerBruto('backupPasta');
+        if (!this._pastaBackup) { this.backupAuto.erro = 'a pasta precisa ser escolhida de novo'; return; }
+        // a permissão é conferida em TODA abertura (Codex, rodada 9): o IndexedDB guarda o handle, a autorização é outro estado
+        try { if ((await this._pastaBackup.queryPermission({ mode: 'readwrite' })) !== 'granted') this.backupAuto.erro = 'reautorizar'; } catch (e) { this.backupAuto.erro = 'reautorizar'; }
+      }
+      // compara o DIA LOCAL do último backup (não a data UTC do carimbo): backup às 22h não pode pular o dia seguinte
+      if (this.cfg.backupAuto.ultimoDia !== hojeISO() && this.temDados() && this.backupAuto.erro !== 'reautorizar') this.backupAutomatico('abertura');
     },
     async escolherPastaBackup() {
       try {
         if (this.backupAuto.suporte === 'mac') { window.webkit.messageHandlers.backupPasta.postMessage(''); return; } // responde em BC_pastaBackup
         const h = await window.showDirectoryPicker({ mode: 'readwrite', id: 'balcao-certo-backup', startIn: 'documents' });
-        this._pastaBackup = h; await BCDB.gravarBruto('backupPasta', h);
+        if (!(await BCDB.gravarBruto('backupPasta', h))) { this.toast('Este navegador não consegue guardar a pasta escolhida; o backup automático não ficaria ligado depois de fechar. Use o backup manual.', 'erro'); return; }
+        this._pastaBackup = h;
         await this.definirPastaBackup(h.name);
       } catch (e) { if (!e || e.name !== 'AbortError') this.toast('Não foi possível usar essa pasta: ' + (e && e.message || e), 'erro'); }
     },
@@ -1441,7 +1522,18 @@ function app() {
       if (!this.cfg || !this.cfg.backupAuto || !this.cfg.backupAuto.pasta) return false;
       const nome = 'backup-balcao-certo-' + hojeISO() + '.json';
       try {
-        if (this.backupAuto.suporte === 'mac') { window.webkit.messageHandlers.backupSalvar.postMessage({ nome, conteudo: this.conteudoBackup() }); return true; } // confirma em BC_backupSalvo
+        if (this.backupAuto.suporte === 'mac') {
+          // a ponte responde em BC_backupSalvo(ok, erro); só anunciamos depois dela (ou falha em 15 s)
+          const ok = await new Promise(resolve => {
+            if (this._backupPendente) this._backupPendente(false, 'substituído por outro backup');
+            const t = setTimeout(() => this._backupPendente && this._backupPendente(false, 'o aplicativo não confirmou a gravação'), 15000);
+            this._backupPendente = (ok, erro) => { clearTimeout(t); this._backupPendente = null; if (!ok) this.backupAuto.erro = erro || 'falhou'; resolve(ok); };
+            window.webkit.messageHandlers.backupSalvar.postMessage({ nome, conteudo: this.conteudoBackup() });
+          });
+          if (!ok) throw new Error(this.backupAuto.erro);
+          await this.registrarBackupAuto();
+          return true;
+        }
         const h = this._pastaBackup; if (!h) throw new Error('a pasta precisa ser escolhida de novo');
         if ((await h.queryPermission({ mode: 'readwrite' })) !== 'granted') {
           if (origem === 'abertura') { this.backupAuto.erro = 'reautorizar'; return false; }   // o navegador exige um clique
@@ -1456,7 +1548,7 @@ function app() {
         return false;
       }
     },
-    async registrarBackupAuto() { this.cfg.backupAuto.ultimo = agoraISO(); this.cfg.backupEm = agoraISO(); this.backupAuto.erro = ''; await this.salvar('cfg'); },
+    async registrarBackupAuto() { this.cfg.backupAuto.ultimo = agoraISO(); this.cfg.backupAuto.ultimoDia = hojeISO(); this.cfg.backupEm = agoraISO(); this.backupAuto.erro = ''; await this.salvar('cfg'); },
     async reautorizarPastaBackup() { if (await this.backupAutomatico('clique')) this.toast('Pasta autorizada. Backup de hoje feito.'); },
     /** Versão instalada (Windows/Mac): compara com site/versao.json e avisa. No site, o service worker atualiza sozinho. */
     async verificarVersao() {
@@ -1471,6 +1563,8 @@ function app() {
       } catch (e) { /* sem internet ou site fora: segue normal */ }
     },
     async marcarAvaliacao() { this.cfg.avaliacaoOk = true; await this.salvar('cfg'); },
+    async adiarAvaliacao() { const d = new Date(); d.setDate(d.getDate() + 7); this.cfg.avaliacaoAdiadaAte = d.toISOString(); await this.salvar('cfg'); },
+    mostrarAvaliacao() { return this.licenciado() && !this.cfg.avaliacaoOk && (!this.cfg.avaliacaoAdiadaAte || this.cfg.avaliacaoAdiadaAte < agoraISO()) && this.vendas.filter(v => !v.cancelada).length >= 3; },
     async exportarBackup() {
       const blob = new Blob([this.conteudoBackup()], { type: 'application/json' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -1486,7 +1580,9 @@ function app() {
         let d; try { d = JSON.parse(rd.result); } catch (e) { this.toast('Arquivo inválido.', 'erro'); return; }
         if (d.app !== 'balcao-certo') { this.toast('Esse arquivo não é um backup do Balcão Certo.', 'erro'); return; }
         this.pedirConfirmacao('Restaurar o backup de ' + this.dataHora(d.geradoEm) + '? TODOS os dados atuais deste aparelho serão substituídos.', async () => {
+          const pastaLocal = this.cfg && this.cfg.backupAuto;              // configuração deste aparelho, não do arquivo
           this.cfg = d.cfg; this.normalizarCfg();
+          this.cfg.backupAuto = pastaLocal || null;
           if (d.licenca) this.licenca = d.licenca;
           for (const c of COLECOES) this[c] = d[c] || [];
           await this.salvar('cfg', 'licenca', ...COLECOES); this.toast('Backup restaurado.'); this.ir('inicio');
@@ -1663,7 +1759,7 @@ function addDias(iso, n) { const d = new Date(iso + 'T12:00:00'); d.setDate(d.ge
 
 </script>
 <script>
-function BCabrirManual(event){event.preventDefault();const w=window.open('','_blank');if(w){w.document.open();w.document.write("<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Manual — Balcão Certo<\/title><style>\n:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f1f5f9;color:#172b3a;font:18px/1.65 system-ui,sans-serif}header,nav,main{max-width:960px;margin:auto;padding:24px}header{padding-top:48px}h1{font-size:40px;line-height:1.15}h2{font-size:28px;line-height:1.2}nav{display:flex;flex-wrap:wrap;gap:8px}a{color:#08675c}nav a{background:white;border:1px solid #cfdbdc;border-radius:6px;padding:6px 12px;font-size:14px}section{background:white;padding:36px;margin:0 0 24px;border-radius:12px;scroll-margin-top:20px}.kicker{font-size:12px;font-weight:700;color:#087c6c;letter-spacing:2px}aside{padding:18px;background:#edf6f4;border-left:4px solid #087c6c}footer{font-size:12px;color:#586878;margin-top:36px}@media(max-width:600px){header,nav,main{padding:16px}section{padding:22px}h1{font-size:32px}}@page{size:A4;margin:18mm}@media print{body{background:white;font-size:12pt}header,nav{display:none}main{padding:0}section{border-radius:0;padding:0;break-after:page;margin:0}section:last-child{break-after:auto}aside{background:white}h2{font-size:24pt}footer{margin-top:24mm}}\n<\/style><\/head><body><header><p>BALCÃO CERTO · VERSÃO 1.0<\/p><h1>Do primeiro cadastro ao fechamento do dia.<\/h1><p>Manual rápido para consultar durante o atendimento.<\/p><a href=\"#\" onclick=\"window.close();return false\">Abrir o sistema<\/a><\/header><nav aria-label=\"Telas do manual\"><a href=\"#salao\">Agenda do salão<\/a><a href=\"#s0\">Primeiro acesso<\/a> <a href=\"#s1\">Início<\/a> <a href=\"#s2\">Produtos e estoque<\/a> <a href=\"#s3\">Clientes<\/a> <a href=\"#s4\">Fornecedores<\/a> <a href=\"#s5\">Vender (PDV)<\/a> <a href=\"#s6\">Crediário e carnê<\/a> <a href=\"#s7\">Caixa<\/a> <a href=\"#s8\">Financeiro<\/a> <a href=\"#s9\">Vendas realizadas<\/a> <a href=\"#s10\">Relatórios<\/a> <a href=\"#s11\">Ordens de serviço<\/a> <a href=\"#s12\">Mesas e delivery<\/a> <a href=\"#s13\">Configurações e impressão<\/a> <a href=\"#s14\">Backup e recuperação<\/a> <a href=\"#s15\">Ajuda<\/a><\/nav><main><section id=\"s0\"><span class=\"kicker\">GUIA 01<\/span><h2>Primeiro acesso<\/h2><p>Abra o link do sistema no navegador do computador ou do celular. Clique em “Já comprei e tenho o código de ativação”, informe o nome da empresa e cole o código: o sistema já abre no seu tipo de negócio. Sem código, o modo demonstração permite até 20 produtos e 30 vendas.<\/p><aside>Use sempre o mesmo navegador em cada aparelho: os dados ficam guardados nele, e o que é lançado no computador não aparece no celular. Antes de trocar de navegador ou de aparelho, exporte um backup.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 1/16<\/footer><\/section><section id=\"s1\"><span class=\"kicker\">GUIA 02<\/span><h2>Início<\/h2><p>Consulte os indicadores e os avisos apresentados. Use o menu para abrir Vender, Produtos, Caixa ou Financeiro. O ramo selecionado define os módulos visíveis.<\/p><aside>Os indicadores dependem dos registros feitos. Confira o período e os custos cadastrados antes de tomar decisões.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 2/16<\/footer><\/section><section id=\"s2\"><span class=\"kicker\">GUIA 03<\/span><h2>Produtos e estoque<\/h2><p>Abra Produtos e estoque (ou Peças, produtos e serviços) e escolha Novo produto. Preencha nome, custo, preço, código de barras e estoque. Para serviços, selecione o tipo correspondente. Em roupas, crie tamanhos e cores e confira o estoque de cada variação.<\/p><aside>Para corrigir quantidades, use o ajuste de estoque. A importação de CSV precisa de colunas de nome e valores conferidos; valide com poucos itens antes de importar a lista completa. O XML de compra deve ser revisado antes de confirmar e não deve ser importado duas vezes.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 3/16<\/footer><\/section><section id=\"s3\"><span class=\"kicker\">GUIA 04<\/span><h2>Clientes<\/h2><p>Abra Clientes e cadastre nome e contato. Se usar crediário, informe o limite quando necessário e selecione o cliente antes de concluir a venda.<\/p><aside>Revise os dados pessoais e evite coletar informações que não são necessárias ao atendimento.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 4/16<\/footer><\/section><section id=\"s4\"><span class=\"kicker\">GUIA 05<\/span><h2>Fornecedores<\/h2><p>Abra Fornecedores e cadastre nome, documento, telefone e contato. Use esses registros para organizar as compras e contas a pagar.<\/p><aside>Confira o fornecedor ao importar XML de compra. A importação não confirma automaticamente pagamentos.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 5/16<\/footer><\/section><section id=\"s5\"><span class=\"kicker\">GUIA 06<\/span><h2>Vender (PDV)<\/h2><p>Abra o caixa e entre em Vender. Pesquise um produto ou leia seu código no campo de busca; confirme a variação quando houver. Confira quantidade, preço, desconto e cliente. Abra o pagamento, registre as formas utilizadas e finalize. Imprima o cupom se necessário.<\/p><aside>F2 abre o PDV, F4 ou F10 abre o pagamento e F8 seleciona desconto. Dinheiro pode gerar troco. Pix e cartão são apenas registros: confirme o recebimento no banco ou na maquininha.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 6/16<\/footer><\/section><section id=\"s6\"><span class=\"kicker\">GUIA 07<\/span><h2>Crediário e carnê<\/h2><p>Na venda, selecione o cliente. No pagamento, escolha Crediário / Fiado, informe parcelas e primeiro vencimento. Confira os valores e finalize. Use o carnê para documentar os vencimentos.<\/p><aside>Dê baixa das parcelas recebidas no Financeiro. Imprimir o carnê não significa que o pagamento foi recebido.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 7/16<\/footer><\/section><section id=\"s7\"><span class=\"kicker\">GUIA 08<\/span><h2>Caixa<\/h2><p>Na abertura, informe o fundo de troco e o operador. Registre retiradas como sangria e reforços como suprimento. No fechamento, conte o dinheiro e informe o valor encontrado.<\/p><aside>Compare o valor contado com o esperado e investigue diferenças antes de encerrar. Cartão e Pix não compõem o dinheiro físico da gaveta.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 8/16<\/footer><\/section><section id=\"s8\"><span class=\"kicker\">GUIA 09<\/span><h2>Financeiro<\/h2><p>Cadastre contas a pagar e receber com valor e vencimento. Ao efetuar ou receber um pagamento, registre a baixa e a forma. Consulte fluxo de caixa e resultado gerencial no período escolhido.<\/p><aside>Os demonstrativos são gerenciais e dependem dos lançamentos e custos registrados. Não substituem a escrituração contábil.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 9/16<\/footer><\/section><section id=\"s9\"><span class=\"kicker\">GUIA 10<\/span><h2>Vendas realizadas<\/h2><p>Consulte o histórico, busque vendas e confira itens e pagamentos. Reimprima o cupom quando necessário. Para cancelar, use a ação indicada e confira a confirmação.<\/p><aside>Cancelar um registro não devolve dinheiro no banco ou na maquininha. Confira também o estoque e as contas vinculadas após qualquer correção.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 10/16<\/footer><\/section><section id=\"s10\"><span class=\"kicker\">GUIA 11<\/span><h2>Relatórios<\/h2><p>Escolha o período e acompanhe total vendido, ticket médio, produtos, vendedores, formas de pagamento e inventário. Exporte os dados nas telas que oferecem CSV.<\/p><aside>O custo é registrado na venda. Alterar o custo de um produto depois não altera o custo histórico dessa venda.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 11/16<\/footer><\/section><section id=\"s11\"><span class=\"kicker\">GUIA 12<\/span><h2>Ordens de serviço<\/h2><p>Disponível em Assistência e Oficina. Crie uma OS, escolha o cliente e descreva o equipamento ou veículo, defeito e previsão. Acrescente peças e mão de obra, registre diagnóstico e atualize a situação. Use Entregar e cobrar para gerar a venda.<\/p><aside>Revise os termos e a garantia em Configurações antes de imprimir a OS. A mensagem pronta para WhatsApp precisa ser conferida e enviada por você; requer conexão.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 12/16<\/footer><\/section><section id=\"s12\"><span class=\"kicker\">GUIA 13<\/span><h2>Mesas e delivery<\/h2><p>Disponível em Restaurante. Abra uma mesa ou pedido de balcão/delivery, inclua itens e observações. Envie a impressão para cozinha quando necessário. Confira a taxa de entrega ou o serviço opcional ao fechar a conta e finalize o pagamento.<\/p><aside>A cozinha usa impressão local. Pedidos externos são cadastrados manualmente; não há integração com aplicativos de entrega ou sincronização entre aparelhos.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 13/16<\/footer><\/section><section id=\"s13\"><span class=\"kicker\">GUIA 14<\/span><h2>Configurações e impressão<\/h2><p>Confira os dados da empresa, ramo, formas e taxas de pagamento, vendedores e preferências de impressão. Para impressora térmica, selecione 58 ou 80 mm; para folha comum, use A4. Salve as alterações.<\/p><aside>Faça uma prova de impressão e configure o equipamento no computador. Os cupons são não fiscais. Em Produtos, use Etiquetas para selecionar o modelo e as quantidades. Faça uma prova de alinhamento na sua impressora.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 14/16<\/footer><\/section><section id=\"s14\"><span class=\"kicker\">GUIA 15<\/span><h2>Backup e recuperação<\/h2><p>Em Configurações, exporte o backup ao terminar o expediente. Confira o arquivo baixado e guarde outra cópia em local seguro fora do aparelho. Antes de restaurar, exporte uma cópia dos dados atuais; depois selecione o arquivo correto e confirme. No computador, ligue o <b>Backup automático<\/b>: escolha uma pasta (de preferência dentro do OneDrive, Google Drive ou Dropbox) e o sistema grava um arquivo por dia sozinho, ao abrir e ao fechar o caixa.<\/p><aside>Restaurar substitui os dados atuais; não mescla cadastros. Não use navegação privada. Limpar os dados do navegador pode apagar o negócio. Não há backup automático na nuvem nem sincronização entre aparelhos.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 15/16<\/footer><\/section><section id=\"s15\"><span class=\"kicker\">GUIA 16<\/span><h2>Ajuda<\/h2><p>Se a tela não abrir, confira a conexão com a internet e abra o link de novo. Se a licença falhar, copie novamente o código inteiro. Se faltar um cadastro, confira se abriu o mesmo navegador e perfil usados antes.<\/p><aside>Antes de limpar os dados do navegador ou trocar de aparelho, faça backup. Peça ajuda pelo chat da compra informando a tela e a mensagem de erro, sem enviar dados pessoais de clientes.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 16/16<\/footer><\/section><section id=\"salao\"><span class=\"kicker\">SALÃO, BARBEARIA E ESTÉTICA<\/span><h2>Agenda e comissões<\/h2><p>Em Configurações, cadastre os profissionais e seus percentuais de comissão. Em Produtos, escolha Serviço / mão de obra e informe preço e duração. Na Agenda, escolha o dia, clique no horário e selecione cliente, profissional e serviços. Use o lembrete para abrir uma mensagem no WhatsApp e confirmar o envio.<\/p><aside>Salve o agendamento antes de usar Atender e cobrar. A conclusão do pagamento marca o atendimento como atendido. O relatório de comissões considera vendas de atendimentos não canceladas e guarda o percentual usado na cobrança. Alterar a taxa depois não muda as comissões antigas. Faça backup também da agenda.<\/aside><\/section><\/main><\/body><\/html>");w.document.close();}}
+function BCabrirManual(event){event.preventDefault();const w=window.open('','_blank');if(w){w.document.open();w.document.write("<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Manual — Balcão Certo<\/title><style>\n:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f1f5f9;color:#172b3a;font:18px/1.65 system-ui,sans-serif}header,nav,main{max-width:960px;margin:auto;padding:24px}header{padding-top:48px}h1{font-size:40px;line-height:1.15}h2{font-size:28px;line-height:1.2}nav{display:flex;flex-wrap:wrap;gap:8px}a{color:#08675c}nav a{background:white;border:1px solid #cfdbdc;border-radius:6px;padding:6px 12px;font-size:14px}section{background:white;padding:36px;margin:0 0 24px;border-radius:12px;scroll-margin-top:20px}.kicker{font-size:12px;font-weight:700;color:#087c6c;letter-spacing:2px}aside{padding:18px;background:#edf6f4;border-left:4px solid #087c6c}footer{font-size:12px;color:#586878;margin-top:36px}@media(max-width:600px){header,nav,main{padding:16px}section{padding:22px}h1{font-size:32px}}@page{size:A4;margin:18mm}@media print{body{background:white;font-size:12pt}header,nav{display:none}main{padding:0}section{border-radius:0;padding:0;break-after:page;margin:0}section:last-child{break-after:auto}aside{background:white}h2{font-size:24pt}footer{margin-top:24mm}}\n<\/style><\/head><body><header><p>BALCÃO CERTO · VERSÃO 1.0<\/p><h1>Do primeiro cadastro ao fechamento do dia.<\/h1><p>Manual rápido para consultar durante o atendimento.<\/p><a href=\"#\" onclick=\"window.close();return false\">Abrir o sistema<\/a><\/header><nav aria-label=\"Telas do manual\"><a href=\"#salao\">Agenda do salão<\/a><a href=\"#s0\">Primeiro acesso<\/a> <a href=\"#s1\">Início<\/a> <a href=\"#s2\">Produtos e estoque<\/a> <a href=\"#s3\">Clientes<\/a> <a href=\"#s4\">Fornecedores<\/a> <a href=\"#s5\">Vender (PDV)<\/a> <a href=\"#s6\">Crediário e carnê<\/a> <a href=\"#s7\">Caixa<\/a> <a href=\"#s8\">Financeiro<\/a> <a href=\"#s9\">Vendas realizadas<\/a> <a href=\"#s10\">Relatórios<\/a> <a href=\"#s11\">Ordens de serviço<\/a> <a href=\"#s12\">Mesas e delivery<\/a> <a href=\"#s13\">Configurações e impressão<\/a> <a href=\"#s14\">Backup e recuperação<\/a> <a href=\"#s15\">Ajuda<\/a><\/nav><main><section id=\"s0\"><span class=\"kicker\">GUIA 01<\/span><h2>Primeiro acesso<\/h2><p>Abra o link do sistema no navegador do computador ou do celular. Clique em “Já comprei e tenho o código de ativação”, informe o nome da empresa e cole o código: o sistema já abre no seu tipo de negócio. Sem código, o modo demonstração permite até 20 produtos e 30 vendas.<\/p><aside>Use sempre o mesmo navegador em cada aparelho: os dados ficam guardados nele, e o que é lançado no computador não aparece no celular. Antes de trocar de navegador ou de aparelho, exporte um backup.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 1/16<\/footer><\/section><section id=\"s1\"><span class=\"kicker\">GUIA 02<\/span><h2>Início<\/h2><p>Consulte os indicadores e os avisos apresentados. Use o menu para abrir Vender, Produtos, Caixa ou Financeiro. O ramo selecionado define os módulos visíveis.<\/p><aside>Os indicadores dependem dos registros feitos. Confira o período e os custos cadastrados antes de tomar decisões.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 2/16<\/footer><\/section><section id=\"s2\"><span class=\"kicker\">GUIA 03<\/span><h2>Produtos e estoque<\/h2><p>Abra Produtos e estoque (ou Peças, produtos e serviços) e escolha Novo produto. Preencha nome, custo, preço, código de barras e estoque. Para serviços, selecione o tipo correspondente. Em roupas, crie tamanhos e cores e confira o estoque de cada variação.<\/p><aside>Para corrigir quantidades, use o ajuste de estoque. A importação de CSV precisa de colunas de nome e valores conferidos; valide com poucos itens antes de importar a lista completa. O XML de compra deve ser revisado antes de confirmar e não deve ser importado duas vezes.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 3/16<\/footer><\/section><section id=\"s3\"><span class=\"kicker\">GUIA 04<\/span><h2>Clientes<\/h2><p>Abra Clientes e cadastre nome e contato. Se usar crediário, informe o limite quando necessário e selecione o cliente antes de concluir a venda.<\/p><aside>Revise os dados pessoais e evite coletar informações que não são necessárias ao atendimento.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 4/16<\/footer><\/section><section id=\"s4\"><span class=\"kicker\">GUIA 05<\/span><h2>Fornecedores<\/h2><p>Abra Fornecedores e cadastre nome, documento, telefone e contato. Use esses registros para organizar as compras e contas a pagar.<\/p><aside>Confira o fornecedor ao importar XML de compra. A importação não confirma automaticamente pagamentos.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 5/16<\/footer><\/section><section id=\"s5\"><span class=\"kicker\">GUIA 06<\/span><h2>Vender (PDV)<\/h2><p>Abra o caixa e entre em Vender. Pesquise um produto ou leia seu código no campo de busca; confirme a variação quando houver. Confira quantidade, preço, desconto e cliente. Abra o pagamento, registre as formas utilizadas e finalize. Imprima o cupom se necessário.<\/p><aside>F2 abre o PDV, F4 ou F10 abre o pagamento e F8 seleciona desconto. Dinheiro pode gerar troco. Pix e cartão são apenas registros: confirme o recebimento no banco ou na maquininha.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 6/16<\/footer><\/section><section id=\"s6\"><span class=\"kicker\">GUIA 07<\/span><h2>Crediário e carnê<\/h2><p>Na venda, selecione o cliente. No pagamento, escolha Crediário / Fiado, informe parcelas e primeiro vencimento. Confira os valores e finalize. Use o carnê para documentar os vencimentos.<\/p><aside>Dê baixa das parcelas recebidas no Financeiro. Imprimir o carnê não significa que o pagamento foi recebido.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 7/16<\/footer><\/section><section id=\"s7\"><span class=\"kicker\">GUIA 08<\/span><h2>Caixa<\/h2><p>Na abertura, informe o fundo de troco e o operador. Registre retiradas como sangria e reforços como suprimento. No fechamento, conte o dinheiro e informe o valor encontrado.<\/p><aside>Compare o valor contado com o esperado e investigue diferenças antes de encerrar. Cartão e Pix não compõem o dinheiro físico da gaveta.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 8/16<\/footer><\/section><section id=\"s8\"><span class=\"kicker\">GUIA 09<\/span><h2>Financeiro<\/h2><p>Cadastre contas a pagar e receber com valor e vencimento. Ao efetuar ou receber um pagamento, registre a baixa e a forma. Consulte fluxo de caixa e resultado gerencial no período escolhido.<\/p><aside>Os demonstrativos são gerenciais e dependem dos lançamentos e custos registrados. Não substituem a escrituração contábil.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 9/16<\/footer><\/section><section id=\"s9\"><span class=\"kicker\">GUIA 10<\/span><h2>Vendas realizadas<\/h2><p>Consulte o histórico, busque vendas e confira itens e pagamentos. Reimprima o cupom quando necessário. Para cancelar, use a ação indicada e confira a confirmação. Para devolver só parte da venda, abra a venda e use <b>Devolver itens<\/b>: escolha as quantidades e se o cliente recebe um <b>vale-compra<\/b> (código impresso, usado como forma de pagamento no caixa) ou dinheiro (sai do caixa aberto).<\/p><aside>Cancelar um registro não devolve dinheiro no banco ou na maquininha. Confira também o estoque e as contas vinculadas após qualquer correção. Vales em aberto ficam em Financeiro; uma venda com devolução não pode mais ser cancelada por inteiro.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 10/16<\/footer><\/section><section id=\"s10\"><span class=\"kicker\">GUIA 11<\/span><h2>Relatórios<\/h2><p>Escolha o período e acompanhe total vendido, ticket médio, produtos, vendedores, formas de pagamento e inventário. Exporte os dados nas telas que oferecem CSV.<\/p><aside>O custo é registrado na venda. Alterar o custo de um produto depois não altera o custo histórico dessa venda.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 11/16<\/footer><\/section><section id=\"s11\"><span class=\"kicker\">GUIA 12<\/span><h2>Ordens de serviço<\/h2><p>Disponível em Assistência e Oficina. Crie uma OS, escolha o cliente e descreva o equipamento ou veículo, defeito e previsão. Acrescente peças e mão de obra, registre diagnóstico e atualize a situação. Use Entregar e cobrar para gerar a venda.<\/p><aside>Revise os termos e a garantia em Configurações antes de imprimir a OS. A mensagem pronta para WhatsApp precisa ser conferida e enviada por você; requer conexão.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 12/16<\/footer><\/section><section id=\"s12\"><span class=\"kicker\">GUIA 13<\/span><h2>Mesas e delivery<\/h2><p>Disponível em Restaurante. Abra uma mesa ou pedido de balcão/delivery, inclua itens e observações. Envie a impressão para cozinha quando necessário. Confira a taxa de entrega ou o serviço opcional ao fechar a conta e finalize o pagamento.<\/p><aside>A cozinha usa impressão local. Pedidos externos são cadastrados manualmente; não há integração com aplicativos de entrega ou sincronização entre aparelhos.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 13/16<\/footer><\/section><section id=\"s13\"><span class=\"kicker\">GUIA 14<\/span><h2>Configurações e impressão<\/h2><p>Confira os dados da empresa, ramo, formas e taxas de pagamento, vendedores e preferências de impressão. Para impressora térmica, selecione 58 ou 80 mm; para folha comum, use A4. Salve as alterações.<\/p><aside>Faça uma prova de impressão e configure o equipamento no computador. Os cupons são não fiscais. Em Produtos, use Etiquetas para selecionar o modelo e as quantidades. Faça uma prova de alinhamento na sua impressora.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 14/16<\/footer><\/section><section id=\"s14\"><span class=\"kicker\">GUIA 15<\/span><h2>Backup e recuperação<\/h2><p>Em Configurações, exporte o backup ao terminar o expediente. Confira o arquivo baixado e guarde outra cópia em local seguro fora do aparelho. Antes de restaurar, exporte uma cópia dos dados atuais; depois selecione o arquivo correto e confirme. No computador, ligue o <b>Backup automático<\/b>: escolha uma pasta (de preferência dentro do OneDrive, Google Drive ou Dropbox) e o sistema grava um arquivo por dia sozinho, ao abrir e ao fechar o caixa.<\/p><aside>Restaurar substitui os dados atuais; não mescla cadastros. Não use navegação privada. Limpar os dados do navegador pode apagar o negócio. Não há backup automático na nuvem nem sincronização entre aparelhos.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 15/16<\/footer><\/section><section id=\"s15\"><span class=\"kicker\">GUIA 16<\/span><h2>Ajuda<\/h2><p>Se a tela não abrir, confira a conexão com a internet e abra o link de novo. Se a licença falhar, copie novamente o código inteiro. Se faltar um cadastro, confira se abriu o mesmo navegador e perfil usados antes.<\/p><aside>Antes de limpar os dados do navegador ou trocar de aparelho, faça backup. Peça ajuda pelo chat da compra informando a tela e a mensagem de erro, sem enviar dados pessoais de clientes.<\/aside><footer>Balcão Certo · Manual da versão 1.0 · 16/16<\/footer><\/section><section id=\"salao\"><span class=\"kicker\">SALÃO, BARBEARIA E ESTÉTICA<\/span><h2>Agenda e comissões<\/h2><p>Em Configurações, cadastre os profissionais e seus percentuais de comissão. Em Produtos, escolha Serviço / mão de obra e informe preço e duração. Na Agenda, escolha o dia, clique no horário e selecione cliente, profissional e serviços. Use o lembrete para abrir uma mensagem no WhatsApp e confirmar o envio.<\/p><aside>Salve o agendamento antes de usar Atender e cobrar. A conclusão do pagamento marca o atendimento como atendido. O relatório de comissões considera vendas de atendimentos não canceladas e guarda o percentual usado na cobrança. Alterar a taxa depois não muda as comissões antigas. Faça backup também da agenda.<\/aside><\/section><\/main><\/body><\/html>");w.document.close();}}
 </script>
 </head>
 <body x-data="app()" x-init="iniciar()">
@@ -1747,11 +1843,11 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
       <template x-if="novaVersao && rota === 'inicio'">
         <div class="aviso azul" style="margin-bottom:14px"><span>⬆️</span><span class="espaco" x-text="'Nova versão ' + novaVersao + ' disponível (você usa a ' + versao + '). Baixe e instale por cima: seus dados continuam.'"></span><a class="btn peq" :href="urlInstalar" target="_blank" rel="noopener">Baixar</a><button class="btn peq fantasma" @click="novaVersao = null">Depois</button></div>
       </template>
-      <template x-if="licenciado() && !cfg.avaliacaoOk && vendas.filter(v => !v.cancelada).length >= 3 && rota === 'inicio'">
-        <div class="aviso amarelo" style="margin-bottom:14px"><span>⭐</span><span class="espaco">Está gostando do sistema? Uma avaliação na sua compra no Mercado Livre ajuda muito a gente. Se algo não ficou bom, responda a mensagem da compra — a gente resolve.</span><a class="btn peq" :href="urlAvaliar" target="_blank" rel="noopener" @click="marcarAvaliacao()">Avaliar</a><button class="btn peq fantasma" @click="marcarAvaliacao()">Já avaliei</button></div>
+      <template x-if="mostrarAvaliacao() && rota === 'inicio'">
+        <div class="aviso amarelo" style="margin-bottom:14px"><span>⭐</span><span class="espaco">Está gostando do sistema? Uma avaliação na sua compra no Mercado Livre ajuda muito a gente. Se algo não ficou bom, responda a mensagem da compra — a gente resolve.</span><a class="btn peq" :href="urlAvaliar" target="_blank" rel="noopener" @click="marcarAvaliacao()">Avaliar</a><button class="btn peq fantasma" @click="marcarAvaliacao()">Já avaliei</button><button class="btn peq fantasma" @click="adiarAvaliacao()">Agora não</button></div>
       </template>
       <template x-if="backupAuto.erro === 'reautorizar' && rota === 'inicio'">
-        <div class="aviso amarelo" style="margin-bottom:14px"><span>💾</span><span class="espaco" x-text="'O navegador pede sua confirmação para continuar gravando o backup automático em \"' + backupAuto.pasta + '\".'"></span><button class="btn peq" @click="reautorizarPastaBackup()">Autorizar</button></div>
+        <div class="aviso amarelo" style="margin-bottom:14px"><span>💾</span><span class="espaco" x-text="'O navegador pede sua confirmação para continuar gravando o backup automático em “' + backupAuto.pasta + '”.'"></span><button class="btn peq" @click="reautorizarPastaBackup()">Autorizar</button></div>
       </template>
       <template x-if="temDados() && diasSemBackup() >= 7 && rota === 'inicio'">
         <div class="aviso vermelho" style="margin-bottom:14px"><span>💾</span><span class="espaco" x-text="cfg.backupEm ? 'Seu último backup foi há ' + diasSemBackup() + ' dias. Os dados ficam só neste aparelho.' : 'Você ainda não fez nenhum backup. Os dados ficam só neste aparelho.'"></span><button class="btn peq" @click="exportarBackup()">Fazer backup agora</button></div>
@@ -2060,6 +2156,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
                 <div class="card kpi"><div class="rot">Dinheiro esperado na gaveta</div><div class="val" x-text="brl(r.esperadoDinheiro)"></div><div class="sub" x-text="'troco inicial ' + brl(caixaAberto().valorInicial)"></div></div>
                 <div class="card kpi"><div class="rot">Sangrias</div><div class="val" x-text="brl(r.sangrias)"></div></div>
                 <div class="card kpi"><div class="rot">Reforços</div><div class="val" x-text="brl(r.reforcos)"></div></div>
+                <div class="card kpi" x-show="r.devolucoes"><div class="rot">Devoluções em dinheiro</div><div class="val vermelho" x-text="brl(r.devolucoes)"></div></div>
               </div>
               <div class="grid g2" style="margin-top:14px">
                 <div class="card pad"><h2>Por forma de pagamento</h2>
@@ -2088,6 +2185,10 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
         <div x-data="{ aba: 'contas' }">
           <div class="cab"><div><h1>Financeiro</h1><p class="muted">Contas a pagar e a receber, fluxo de caixa e resultado (DRE).</p></div>
             <div class="linha"><button class="btn" @click="abrirConta('receber')">＋ Conta a receber</button><button class="btn pri" @click="abrirConta('pagar')">＋ Despesa / conta a pagar</button></div></div>
+          <template x-if="valesAbertos().length"><div class="card pad" style="margin-bottom:14px"><h2>🎟️ Vales-compra em aberto</h2>
+            <table class="tab"><thead><tr><th>Código</th><th>Cliente</th><th>Emitido</th><th class="r">Saldo</th><th></th></tr></thead><tbody>
+              <template x-for="va in valesAbertos()" :key="va.id"><tr><td class="b mono" x-text="va.codigo"></td><td x-text="nomeCliente(va.clienteId) || '—'"></td><td class="small" x-text="dataHora(va.criadoEm)"></td><td class="num b" x-text="brl(va.saldo)"></td><td class="r"><button class="btn peq" @click="imprimirVale(va)">Imprimir</button> <button class="btn peq fantasma" @click="cancelarVale(va)">Cancelar</button></td></tr></template>
+            </tbody></table></div></template>
           <div class="grid g4" style="margin-bottom:14px">
             <div class="card kpi"><div class="rot">A receber (em aberto)</div><div class="val" x-text="brl(totalContas('receber'))"></div><div class="sub vermelho" x-text="'vencido ' + brl(totalContas('receber', 'vencidas'))"></div></div>
             <div class="card kpi"><div class="rot">A pagar (em aberto)</div><div class="val" x-text="brl(totalContas('pagar'))"></div><div class="sub vermelho" x-text="'vencido ' + brl(totalContas('pagar', 'vencidas'))"></div></div>
@@ -2165,7 +2266,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
             <table class="tab"><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Itens</th><th>Pagamento</th><th class="r">Total</th><th></th></tr></thead>
               <tbody><template x-for="v in vendasFiltradas()" :key="v.id">
                 <tr class="clicavel" @click="verVenda(v)" :style="v.cancelada ? 'opacity:.5' : ''">
-                  <td class="b" x-text="v.numero"></td><td class="small nowrap" x-text="dataHora(v.data)"></td><td x-text="nomeCliente(v.clienteId) || '—'"></td>
+                  <td class="b"><span x-text="v.numero"></span><span class="selo amarelo tiny" x-show="(v.devolucoes || []).length" style="margin-left:6px">↩️ devolução</span></td><td class="small nowrap" x-text="dataHora(v.data)"></td><td x-text="nomeCliente(v.clienteId) || '—'"></td>
                   <td class="small" x-text="v.itens.length + ' itens: ' + v.itens.slice(0, 2).map(i => i.nome).join(', ') + (v.itens.length > 2 ? '…' : '')"></td>
                   <td class="small" x-text="v.pagamentos.map(p => nomeForma(p.forma)).join(' + ')"></td>
                   <td class="num b" x-text="brl(v.total)"></td>
@@ -2190,6 +2291,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
             <div class="card kpi"><div class="rot">Ticket médio</div><div class="val" x-text="brl(r.ticket)"></div></div>
             <div class="card kpi"><div class="rot">Lucro bruto</div><div class="val verde" x-text="brl(r.lucro)"></div><div class="sub" x-text="'margem ' + r.margem.toFixed(1) + '%'"></div></div>
             <div class="card kpi"><div class="rot">Estoque (preço de custo)</div><div class="val" x-text="brl(inventario().custo)"></div><div class="sub" x-text="qtd(inventario().pecas) + ' unidades'"></div></div>
+            <div class="card kpi" x-show="r.devolucoes"><div class="rot">Devoluções</div><div class="val vermelho" x-text="brl(r.devolucoes)"></div><div class="sub" x-text="r.qtdDevolucoes + ' no período · vales em aberto: ' + brl(valesAbertos().reduce((s, v) => s + v.saldo, 0))"></div></div>
           </div>
           <template x-if="ramo().agenda"><div class="card pad"><h2>Comissão por profissional</h2><template x-for="v in comissaoProfissionais()" :key="v.nome"><div class="linha entre"><b x-text="v.nome"></b><span x-text="v.qtd + ' atendimentos · vendas ' + brl(v.total)"></span><strong x-text="brl(v.comissao)"></strong></div></template><p class="muted small" x-show="!comissaoProfissionais().length">Sem atendimentos cobrados neste período.</p></div></template>
           <div class="card pad" style="margin-top:14px"><h2>Vendas por dia</h2>
@@ -2289,7 +2391,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
               <h3>Backup automático</h3>
               <template x-if="!backupAuto.suporte"><p class="muted small">Neste navegador não dá para gravar numa pasta sozinho. No computador, use o sistema instalado (Windows ou Mac) ou o Chrome/Edge — e, no celular, continue com o backup manual.</p></template>
               <template x-if="backupAuto.suporte && !backupAuto.pasta"><div class="linha"><button class="btn" @click="escolherPastaBackup()">📁 Escolher pasta de backup</button><span class="small muted">Um arquivo por dia, ao abrir o sistema e ao fechar o caixa. Escolha uma pasta do OneDrive, Google Drive ou Dropbox e o backup vai para a nuvem sozinho.</span></div></template>
-              <template x-if="backupAuto.suporte && backupAuto.pasta"><div class="linha"><span class="selo verde">Ligado</span><span class="small" x-text="'Pasta: ' + backupAuto.pasta + (cfg.backupAuto && cfg.backupAuto.ultimo ? ' · último: ' + dataHora(cfg.backupAuto.ultimo) : ' · ainda não gravou')"></span><span class="small vermelho" x-show="backupAuto.erro && backupAuto.erro !== 'reautorizar'" x-text="backupAuto.erro"></span><button class="btn peq" @click="backupAutomatico('clique')">Gravar agora</button><button class="btn peq fantasma" @click="escolherPastaBackup()">Trocar pasta</button><button class="btn peq fantasma" @click="desativarBackupAuto()">Desligar</button></div></template>
+              <template x-if="backupAuto.suporte && backupAuto.pasta"><div class="linha"><span class="selo verde">Ligado</span><span class="small" x-text="'Pasta: ' + backupAuto.pasta + (cfg.backupAuto && cfg.backupAuto.ultimo ? ' · último: ' + dataHora(cfg.backupAuto.ultimo) : ' · ainda não gravou')"></span><span class="small vermelho" x-show="backupAuto.erro && backupAuto.erro !== 'reautorizar'" x-text="backupAuto.erro"></span><button class="btn peq" x-show="backupAuto.erro === 'reautorizar'" @click="reautorizarPastaBackup()">Autorizar pasta</button><button class="btn peq" @click="backupAutomatico('clique')">Gravar agora</button><button class="btn peq fantasma" @click="escolherPastaBackup()">Trocar pasta</button><button class="btn peq fantasma" @click="desativarBackupAuto()">Desligar</button></div></template>
             </div>
           </div>
           <div class="card pad"><h2 class="vermelho">Zona de perigo</h2><button class="btn perigo" @click="apagarTudo()">Apagar todos os dados</button></div>
@@ -2428,7 +2530,8 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
     <div class="mcab"><h2>Receber pagamento</h2><button class="x" @click="fecharModal()">×</button></div>
     <div class="mcorpo pilha">
       <div class="linha entre"><span class="muted">Total</span><span style="font-size:28px;font-weight:800" x-text="brl(totalPdv())"></span></div>
-      <div class="pag-formas"><template x-for="f in cfg.pagamentos" :key="f.id"><button :class="pag.forma === f.id && 'on'" @click="pag.forma = f.id" x-text="f.nome" :data-forma="f.id"></button></template></div>
+      <div class="pag-formas"><template x-for="f in cfg.pagamentos" :key="f.id"><button :class="pag.forma === f.id && 'on'" @click="pag.forma = f.id" x-text="f.nome" :data-forma="f.id"></button></template><button :class="pag.forma === 'vale' && 'on'" @click="pag.forma = 'vale'" data-forma="vale" x-show="valesAbertos().length">🎟️ Vale-compra</button></div>
+      <template x-if="pag.forma === 'vale'"><label class="campo"><span class="rot">Código do vale (impresso no vale)</span><input x-model="pag.valeCodigo" placeholder="VALE-0001" data-pag-vale @keydown.enter.prevent="adicionarPagamento()" style="text-transform:uppercase"><span class="small muted" x-show="valePorCodigo(pag.valeCodigo)" x-text="valePorCodigo(pag.valeCodigo) ? 'Saldo disponível: ' + brl(valePorCodigo(pag.valeCodigo).saldo) : ''"></span></label></template>
       <div class="grid g2">
         <label class="campo"><span class="rot">Valor recebido nesta forma</span><input id="pag-valor" x-model="pag.valor" inputmode="decimal" @keydown.enter.prevent="faltaPdv() > 0.001 ? adicionarPagamento() : finalizarVenda()" style="font-size:18px;font-weight:700"></label>
         <template x-if="pag.forma === 'crediario'"><div class="grid g2"><label class="campo"><span class="rot">Parcelas</span><input type="number" min="1" max="24" x-model.number="pag.parcelas"></label><label class="campo"><span class="rot">1º vencimento</span><input type="date" x-model="pag.primeiroVenc"></label></div></template>
@@ -2459,6 +2562,33 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
   </div></div>
 </template>
 
+<template x-if="modal === 'devolucao' && form.venda">
+  <div class="fundo" @mousedown.self="fecharModal()"><div class="modal">
+    <div class="mcab"><h2 x-text="'Devolução — venda nº ' + form.venda.numero"></h2><button class="x" @click="fecharModal()">×</button></div>
+    <div class="mcorpo pilha">
+      <table class="tab"><thead><tr><th>Item</th><th class="r">Vendido</th><th class="r" style="width:120px">Devolver</th></tr></thead><tbody>
+        <template x-for="i in form.itens" :key="i.idx"><tr><td x-text="i.nome + ' — ' + brl(i.preco)"></td><td class="num" x-text="qtd(i.maximo) + ' ' + i.unidade"></td><td><input x-model="i.qtd" inputmode="decimal" :placeholder="'até ' + qtd(i.maximo)" style="text-align:right" :data-dev-qtd="i.idx"></td></tr></template>
+      </tbody></table>
+      <div class="small muted" x-show="form.fator < 0.999" x-text="'A venda teve desconto: o valor devolvido é proporcional (' + (form.fator * 100).toFixed(1) + '% do preço).'"></div>
+      <label class="campo"><span class="rot">Motivo (opcional)</span><input x-model="form.motivo" placeholder="Ex.: tamanho errado, defeito"></label>
+      <div class="pag-formas"><button :class="form.forma === 'vale' && 'on'" @click="form.forma = 'vale'" data-dev-vale>🎟️ Gerar vale-compra</button><button :class="form.forma === 'dinheiro' && 'on'" @click="form.forma = 'dinheiro'" data-dev-dinheiro">💵 Devolver em dinheiro</button></div>
+      <div class="small muted" x-text="form.forma === 'vale' ? 'O cliente recebe um vale com código para usar em novas compras (fica guardado em Financeiro).' : 'O valor sai do caixa aberto e aparece no fechamento.'"></div>
+      <div class="linha entre b" style="font-size:20px"><span>Total a devolver</span><span x-text="brl(totalDevolucaoForm())"></span></div>
+    </div>
+    <div class="mrod"><button class="btn" @click="verVenda(form.venda)">Voltar</button><button class="btn pri" @click="registrarDevolucao()" data-dev-confirmar>Confirmar devolução</button></div>
+  </div></div>
+</template>
+<template x-if="modal === 'valeOk' && form.vale">
+  <div class="fundo" @mousedown.self="fecharModal()"><div class="modal" style="max-width:460px">
+    <div class="mcab"><h2>🎟️ Vale-compra gerado</h2><button class="x" @click="fecharModal()">×</button></div>
+    <div class="mcorpo pilha c">
+      <div style="font-size:30px;font-weight:800;letter-spacing:1px" x-text="form.vale.codigo"></div>
+      <div style="font-size:22px" x-text="brl(form.vale.saldo)"></div>
+      <div class="muted small">Entregue o vale impresso ao cliente. No caixa, escolha a forma "Vale-compra" e digite o código.</div>
+    </div>
+    <div class="mrod"><button class="btn" @click="fecharModal()">Fechar</button><button class="btn pri" @click="imprimirVale(form.vale)">🖨️ Imprimir vale</button></div>
+  </div></div>
+</template>
 <template x-if="modal === 'verVenda' && form.venda">
   <div class="fundo" @mousedown.self="fecharModal()"><div class="modal">
     <div class="mcab"><h2 x-text="'Venda nº ' + form.venda.numero"></h2><button class="x" @click="fecharModal()">×</button></div>
@@ -2471,6 +2601,8 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
       <div class="linha entre b" style="font-size:18px"><span>Total</span><span x-text="brl(form.venda.total)"></span></div>
       <div class="small muted" x-text="form.venda.pagamentos.map(p => nomeForma(p.forma) + ' ' + brl(p.valor)).join(' + ') + (form.venda.troco ? ' · troco ' + brl(form.venda.troco) : '')"></div>
       <div class="small verde" x-text="'Lucro: ' + brl(lucroVenda(form.venda))"></div>
+      <template x-if="(form.venda.devolucoes || []).length"><div class="aviso amarelo small"><span>↩️</span><div class="espaco"><template x-for="d in form.venda.devolucoes" :key="d.id"><div><span x-text="dataHora(d.data) + ' — ' + d.itens.map(i => qtd(i.qtd) + 'x ' + i.nome).join(', ') + ' — ' + brl(d.total) + (d.forma === 'vale' ? ' em vale-compra' : ' em dinheiro')"></span> <template x-if="d.valeId && vales.find(x => x.id === d.valeId)"><button class="btn peq fantasma" @click="imprimirVale(vales.find(x => x.id === d.valeId))" x-text="'Imprimir ' + vales.find(x => x.id === d.valeId).codigo"></button></template></div></template></div></div></template>
+      <template x-if="!form.venda.cancelada && form.venda.itens.some((i, idx) => i.qtd - devolvidoItem(form.venda, idx) > 0.001)"><div><button class="btn" @click="abrirDevolucao(form.venda)" data-venda-devolver>↩️ Devolver itens (vale-compra ou dinheiro)</button></div></template>
     </div>
     <div class="mrod"><button class="btn perigo" x-show="!form.venda.cancelada" @click="cancelarVenda(form.venda)">Cancelar venda</button><div class="espaco"></div><button class="btn" @click="imprimirVenda(form.venda)">🖨️ Reimprimir</button></div>
   </div></div>
