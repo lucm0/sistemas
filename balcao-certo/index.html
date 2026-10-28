@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Balcão Certo</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f766e'/%3E%3Ctext x='32' y='42' font-size='28' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EBC%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icones/bc-192.png">
+<meta name="theme-color" content="#0f766e">
 <style>
 /* Balcão Certo — estilos. Sem framework: tokens + componentes. */
 :root {
@@ -508,7 +511,17 @@ function app() {
       this.pronto = true;
       window.addEventListener('keydown', (e) => this.teclas(e));
       window.addEventListener('hashchange', () => this.lerRota());
+      // Link da mensagem de compra (página bem-vindo → "#ativar=<código>"): um toque ativa.
+      // O hash é apagado em seguida para o código não ficar no histórico nem virar rota.
+      const porLink = location.hash.match(/^#ativar=(.+)$/);
+      if (porLink) { history.replaceState(null, '', location.pathname + location.search); await this.ativarPorLink(decodeURIComponent(porLink[1])); }
       this.lerRota();
+    },
+    async ativarPorLink(codigo) {
+      if (!this.cfg) { this.onb.passo = 2; this.onb.codigo = codigo; await this.conferirCodigoOnb(); if (!this.onb.lic) this.onb.erro = 'Este link veio com um código inválido. Cole o código completo da mensagem da compra.'; return; }
+      if (this.licenciado()) { this.toast('Sua licença já está ativa.'); return; }
+      this.codigoLicenca = codigo; await this.ativar();
+      if (!this.licenciado()) this.ir('config');
     },
     normalizarCfg() {
       const c = this.cfg;

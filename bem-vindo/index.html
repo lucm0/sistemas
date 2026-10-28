@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bem-vindo · Balcão Certo</title>
+<meta name="description" content="Ative e abra o seu sistema, instale no celular ou no computador, manual e suporte.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f766e'/%3E%3Ctext x='32' y='42' font-size='28' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EBC%3C/text%3E%3C/svg%3E">
+<style>
+:root{--verde:#0f766e;--verde2:#14b8a6;--fundo:#f4f7f6;--texto:#0f2f2c;--fraco:#4a5c59;--borda:#d7e3e0;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fundo);color:var(--texto);font-family:-apple-system,"Segoe UI","Helvetica Neue",Arial,sans-serif;line-height:1.45}
+main{max-width:640px;margin:0 auto;padding:28px 16px 56px}
+.topo{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.logo{width:48px;height:48px;border-radius:13px;background:linear-gradient(135deg,var(--verde2),var(--verde));display:grid;place-items:center;color:#fff;font-weight:800;font-size:18px;flex:none}
+h1{font-size:24px;margin:0;line-height:1.2}
+.sub{color:var(--fraco);margin:2px 0 0;font-size:15px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:16px;padding:18px 20px;margin:14px 0}
+.card h2{font-size:17px;margin:0 0 8px}
+.card p{margin:6px 0;font-size:15px}
+.muted{color:var(--fraco)}
+.btn{display:inline-block;background:var(--verde);color:#fff;text-decoration:none;font-weight:700;padding:14px 20px;border-radius:12px;font-size:17px;border:0;cursor:pointer;width:100%;text-align:center}
+.btn.sec{background:#fff;color:var(--verde);border:2px solid var(--verde);font-size:15px;padding:11px 16px;width:auto}
+.btn:active{transform:translateY(1px)}
+.ok{display:inline-block;background:#e6f6f2;color:#0b5c55;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600}
+.erro{background:#fdecec;color:#8b1a1a;border-radius:10px;padding:10px 12px;font-size:14px}
+textarea{width:100%;min-height:84px;border:1px solid var(--borda);border-radius:10px;padding:10px;font:inherit;font-size:13px;resize:vertical}
+code{background:#eef3f1;border-radius:6px;padding:1px 6px;font-size:13px;word-break:break-all}
+ol,ul{padding-left:20px;margin:6px 0}li{margin:4px 0;font-size:15px}
+.cod{font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all;background:#eef3f1;border-radius:10px;padding:10px;margin:8px 0}
+details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
+.rodape{color:var(--fraco);font-size:13px;margin-top:26px;text-align:center}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <div class="topo">
+    <div class="logo" id="logo">BC</div>
+    <div><h1 id="titulo">Bem-vindo ao Balcão Certo</h1><p class="sub" id="subtitulo">Obrigado pela compra! Aqui está tudo o que você precisa para começar.</p></div>
+  </div>
+
+  <!-- Com código na URL: ativar com um toque -->
+  <section class="card" id="ativar" hidden>
+    <h2>1. Ativar e abrir o sistema</h2>
+    <p id="resumo"></p>
+    <p><a class="btn" id="btnAtivar" href="#">Ativar e abrir o sistema</a></p>
+    <p class="muted" style="font-size:13px">O sistema abre já ativado. Na primeira vez ele pede o nome da sua empresa (vai no cupom) e pronto.</p>
+    <details><summary>Ver meu código de ativação</summary>
+      <p class="muted" style="font-size:14px">Guarde este código: ele ativa o sistema em qualquer aparelho seu. Ele também fica na mensagem da sua compra no Mercado Livre.</p>
+      <div class="cod" id="codigo"></div>
+      <button class="btn sec" id="copiar" type="button">Copiar código</button>
+    </details>
+  </section>
+
+  <!-- Sem código na URL: colar o código -->
+  <section class="card" id="colar" hidden>
+    <h2>1. Ativar o sistema</h2>
+    <p>Cole aqui o código de ativação que está na mensagem da sua compra (no chat do Mercado Livre):</p>
+    <textarea id="campoCodigo" placeholder="Cole o código completo"></textarea>
+    <p id="erroCodigo" class="erro" hidden></p>
+    <p><button class="btn" id="btnColar" type="button">Ativar e abrir o sistema</button></p>
+    <p class="muted" style="font-size:13px">Ainda não comprou? Dá para conhecer o sistema sem código, em modo demonstração: <a href="../balcao-certo/">Balcão Certo</a> · <a href="../financas-familia/">Finanças da Família</a>.</p>
+  </section>
+
+  <section class="card">
+    <h2>2. Instalar no celular ou no computador</h2>
+    <p>O sistema roda no navegador — não precisa baixar instalador. Para ficar como um aplicativo, com ícone na tela:</p>
+    <ul>
+      <li><b>iPhone / iPad (Safari):</b> toque em <b>Compartilhar</b> (quadrado com seta) → <b>Adicionar à Tela de Início</b>.</li>
+      <li><b>Android (Chrome):</b> menu <b>⋮</b> → <b>Instalar aplicativo</b> (ou <b>Adicionar à tela inicial</b>).</li>
+      <li><b>Computador (Chrome ou Edge):</b> clique no ícone de <b>instalar</b> que aparece na barra de endereço, ou menu <b>⋮</b> → <b>Instalar</b>.</li>
+    </ul>
+    <p class="muted" style="font-size:14px"><b>Importante:</b> os seus dados ficam guardados no aparelho em que você usa o sistema (não vão para a internet). Use sempre o mesmo navegador no mesmo aparelho e faça o backup em <b>Configurações</b> antes de trocar de aparelho ou limpar o navegador.</p>
+  </section>
+
+  <section class="card" id="video" hidden>
+    <h2>3. Primeiros passos em vídeo</h2>
+    <p>Em poucos minutos você vê o cadastro de produtos, a primeira venda e o fechamento do caixa.</p>
+    <p><a class="btn sec" id="linkVideo" href="#" target="_blank" rel="noopener">Assistir ao vídeo</a></p>
+  </section>
+
+  <section class="card">
+    <h2 id="tituloManual">3. Manual de uso</h2>
+    <p>Do primeiro cadastro ao fechamento do dia, tela por tela.</p>
+    <p><a class="btn sec" id="linkManual" href="../balcao-certo/manual.html" target="_blank" rel="noopener">Abrir o manual</a></p>
+  </section>
+
+  <section class="card">
+    <h2 id="tituloSuporte">4. Suporte</h2>
+    <p>Responda a mensagem da sua compra no Mercado Livre — é por lá que a gente atende.</p>
+    <p><b>Horário:</b> segunda a sexta, das 9h às 18h (exceto feriados).</p>
+    <p class="muted" style="font-size:14px">Garantia de 7 dias: se não ficar satisfeito, devolvemos o valor pelo próprio Mercado Livre.</p>
+  </section>
+
+  <section class="card">
+    <h2 id="tituloLicenca">5. Sua licença</h2>
+    <ul>
+      <li>Licença vitalícia, sem mensalidade, vinculada ao seu pedido no Mercado Livre.</li>
+      <li>O código ativa o sistema nos <b>seus</b> aparelhos (computador e celular). Os dados de cada aparelho são independentes.</li>
+      <li>A licença é de uso individual: não pode ser revendida, cedida ou publicada.</li>
+    </ul>
+  </section>
+
+  <p class="rodape">Balcão Certo · Sistemas simples para quem vende todo dia.</p>
+</main>
+<script>
+(function () {
+  // Página estática: tudo acontece aqui no navegador. Sem rede, sem chave privada — a assinatura do
+  // código é conferida pelo próprio sistema ao abrir; aqui só se LÊ a carga para montar a tela.
+  var VIDEO = { 'balcao-certo': '', 'financas-familia': '' }; // preencher quando os vídeos existirem
+  var APPS = { 'balcao-certo': '../balcao-certo/', 'financas-familia': '../financas-familia/' };
+  var NOMES = { 'balcao-certo': 'Balcão Certo', 'financas-familia': 'Finanças da Família' };
+  var RAMOS = { loja: 'Loja', roupas: 'Loja de roupas e calçados', assistencia: 'Assistência técnica', oficina: 'Oficina', restaurante: 'Restaurante', salao: 'Salão de beleza' };
+  var $ = function (id) { return document.getElementById(id); };
+
+  function deB64u(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '=';
+    var bin = atob(s), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  /** Lê a carga "BC1|pedido|nome|aaaammdd[|ramo]" (ou FF1). Não valida a assinatura: isso é o sistema que faz. */
+  function lerCodigo(bruto) {
+    var limpo = String(bruto || '').replace(/\s+/g, '');
+    var m = limpo.match(/([A-Za-z0-9_-]{16,})\.([A-Za-z0-9_-]{60,})/);
+    if (!m) return null;
+    try {
+      var p = deB64u(m[1]).split('|');
+      var produto = p[0] === 'BC1' ? 'balcao-certo' : p[0] === 'FF1' ? 'financas-familia' : null;
+      if (!produto || p.length < 4) return null;
+      return { codigo: m[1] + '.' + m[2], produto: produto, pedido: p[1], nome: p[2], ramo: p[4] || '' };
+    } catch (e) { return null; }
+  }
+  function primeiroNome(n) { var p = String(n || '').trim().split(/\s+/)[0]; return /^[\p{L}][\p{L}'.-]*$/u.test(p || '') ? p : ''; }
+  function urlAtivar(info) { return APPS[info.produto] + '#ativar=' + info.codigo; }
+
+  function montar(info) {
+    var nome = NOMES[info.produto];
+    $('titulo').textContent = 'Bem-vindo ao ' + nome;
+    $('logo').textContent = info.produto === 'financas-familia' ? 'ff' : 'BC';
+    var ola = primeiroNome(info.nome) ? 'Olá, ' + primeiroNome(info.nome) + '! ' : '';
+    $('subtitulo').textContent = ola + 'Obrigado pela compra. Aqui está tudo o que você precisa para começar.';
+    var edicao = info.ramo && RAMOS[info.ramo] ? ' — edição ' + RAMOS[info.ramo] : '';
+    $('resumo').innerHTML = '<span class="ok">Pedido ' + info.pedido + '</span> &nbsp;' + nome + edicao + '. Seu código já está neste link: é só tocar no botão.';
+    $('btnAtivar').href = urlAtivar(info);
+    $('codigo').textContent = info.codigo;
+    $('ativar').hidden = false; $('colar').hidden = true;
+    if (info.produto === 'financas-familia') {
+      $('linkManual').href = '../financas-familia/#ajuda'; $('linkManual').textContent = 'Abrir "Como usar"';
+      $('tituloLicenca').textContent = '5. Sua licença';
+    }
+    if (VIDEO[info.produto]) { $('linkVideo').href = VIDEO[info.produto]; $('video').hidden = false; $('tituloManual').textContent = '4. Manual de uso'; $('tituloSuporte').textContent = '5. Suporte'; $('tituloLicenca').textContent = '6. Sua licença'; }
+  }
+
+  var c = new URLSearchParams(location.search).get('c');
+  var info = c ? lerCodigo(c) : null;
+  if (info) montar(info);
+  else {
+    $('colar').hidden = false;
+    if (c) { $('erroCodigo').textContent = 'O link veio incompleto. Cole o código inteiro que está na mensagem da compra.'; $('erroCodigo').hidden = false; }
+  }
+  $('btnColar').addEventListener('click', function () {
+    var i = lerCodigo($('campoCodigo').value);
+    if (!i) { $('erroCodigo').textContent = 'Não reconheci esse código. Copie o código completo (ele termina com um ponto no meio e letras depois).'; $('erroCodigo').hidden = false; return; }
+    location.href = urlAtivar(i);
+  });
+  $('copiar').addEventListener('click', function () {
+    var t = $('codigo').textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { $('copiar').textContent = 'Copiado ✔'; }, function () {
+      var r = document.createRange(); r.selectNodeContents($('codigo')); var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    });
+  });
+})();
+</script>
+</body>
+</html>

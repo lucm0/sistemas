@@ -1,0 +1,24 @@
+{
+ "name": "Finanças da Família",
+ "short_name": "Finanças",
+ "description": "Controle financeiro da casa, no seu aparelho.",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#f6f7f2",
+ "theme_color": "#174f43",
+ "lang": "pt-BR",
+ "icons": [
+  {
+   "src": "icones/ff-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icones/ff-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any maskable"
+  }
+ ]
+}
