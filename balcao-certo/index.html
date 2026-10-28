@@ -513,6 +513,9 @@ function app() {
       window.addEventListener('hashchange', () => this.lerRota());
       // Link da mensagem de compra (página bem-vindo → "#ativar=<código>"): um toque ativa.
       // O hash é apagado em seguida para o código não ficar no histórico nem virar rota.
+      // No site, o service worker deixa o sistema abrir SEM internet depois da 1ª vez (celular/PC).
+      // Em file:// (instalado pelo .exe/.app) não existe service worker — e não precisa.
+      if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
       const porLink = location.hash.match(/^#ativar=(.+)$/);
       if (porLink) { history.replaceState(null, '', location.pathname + location.search); await this.ativarPorLink(decodeURIComponent(porLink[1])); }
       this.lerRota();

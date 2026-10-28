@@ -31,6 +31,7 @@ ol,ul{padding-left:20px;margin:6px 0}li{margin:4px 0;font-size:15px}
 .cod{font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all;background:#eef3f1;border-radius:10px;padding:10px;margin:8px 0}
 details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
 .rodape{color:var(--fraco);font-size:13px;margin-top:26px;text-align:center}
+.plat{border:1px solid var(--borda);border-radius:12px;padding:10px 12px;margin:8px 0}.plat.aqui{border-color:var(--verde);background:#f3faf8}.plat.aqui .btn::after{content:' (este aparelho)';font-weight:400;font-size:14px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -64,15 +65,22 @@ details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
     <p class="muted" style="font-size:13px">Ainda não comprou? Dá para conhecer o sistema sem código, em modo demonstração: <a href="../balcao-certo/">Balcão Certo</a> · <a href="../financas-familia/">Finanças da Família</a>.</p>
   </section>
 
-  <section class="card">
-    <h2>2. Instalar no celular ou no computador</h2>
-    <p>O sistema roda no navegador — não precisa baixar instalador. Para ficar como um aplicativo, com ícone na tela:</p>
-    <ul>
-      <li><b>iPhone / iPad (Safari):</b> toque em <b>Compartilhar</b> (quadrado com seta) → <b>Adicionar à Tela de Início</b>.</li>
-      <li><b>Android (Chrome):</b> menu <b>⋮</b> → <b>Instalar aplicativo</b> (ou <b>Adicionar à tela inicial</b>).</li>
-      <li><b>Computador (Chrome ou Edge):</b> clique no ícone de <b>instalar</b> que aparece na barra de endereço, ou menu <b>⋮</b> → <b>Instalar</b>.</li>
-    </ul>
-    <p class="muted" style="font-size:14px"><b>Importante:</b> os seus dados ficam guardados no aparelho em que você usa o sistema (não vão para a internet). Use sempre o mesmo navegador no mesmo aparelho e faça o backup em <b>Configurações</b> antes de trocar de aparelho ou limpar o navegador.</p>
+  <section class="card" id="instalar">
+    <h2>2. Instalar no computador ou no celular</h2>
+    <p>O sistema fica <b>no seu aparelho</b> e funciona sem internet. Escolha o seu:</p>
+    <div class="plat" id="plat-win">
+      <p><a class="btn" id="dlWin" href="../download/BalcaoCerto-Setup.exe">⬇ Baixar para Windows</a></p>
+      <p class="muted" style="font-size:14px">Abra o arquivo baixado e clique em <b>Avançar</b> até o fim (não pede senha de administrador). Se o Windows mostrar "O Windows protegeu o seu PC", clique em <b>Mais informações → Executar assim mesmo</b> — é o aviso padrão para programas novos. O ícone aparece na área de trabalho.</p>
+    </div>
+    <div class="plat" id="plat-mac">
+      <p><a class="btn" id="dlMac" href="../download/BalcaoCerto-Mac.zip">⬇ Baixar para Mac</a></p>
+      <p class="muted" style="font-size:14px">Descompacte, arraste o aplicativo para <b>Aplicativos</b> e, na primeira vez, abra com <b>botão direito → Abrir</b> (o Mac pede isso para apps fora da App Store).</p>
+    </div>
+    <div class="plat" id="plat-cel">
+      <p><a class="btn" id="abrirCel" href="../balcao-certo/">📱 Abrir no celular</a></p>
+      <p class="muted" style="font-size:14px"><b>iPhone (Safari):</b> Compartilhar → <b>Adicionar à Tela de Início</b>. <b>Android (Chrome):</b> menu ⋮ → <b>Instalar aplicativo</b>. Depois da primeira abertura, funciona sem internet.</p>
+    </div>
+    <p class="muted" style="font-size:14px"><b>Importante:</b> os dados ficam no aparelho em que você usa o sistema. Cada aparelho tem os seus; faça o backup em <b>Configurações</b> antes de trocar de aparelho ou limpar o navegador.</p>
   </section>
 
   <section class="card" id="video" hidden>
@@ -154,8 +162,18 @@ details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
     if (VIDEO[info.produto]) { $('linkVideo').href = VIDEO[info.produto]; $('video').hidden = false; $('tituloManual').textContent = '4. Manual de uso'; $('tituloSuporte').textContent = '5. Suporte'; $('tituloLicenca').textContent = '6. Sua licença'; }
   }
 
+  // Downloads conforme o produto, e a plataforma deste aparelho vem primeiro.
+  var DL = { 'balcao-certo': { win: '../download/BalcaoCerto-Setup.exe', mac: '../download/BalcaoCerto-Mac.zip', cel: '../balcao-certo/' },
+             'financas-familia': { win: '../download/FinancasFamilia-Setup.exe', mac: '../download/FinancasFamilia-Mac.zip', cel: '../financas-familia/' } };
+  function montarDownloads(produto) {
+    var d = DL[produto] || DL['balcao-certo'];
+    $('dlWin').href = d.win; $('dlMac').href = d.mac; $('abrirCel').href = d.cel;
+    var ua = navigator.userAgent, aqui = /Windows/i.test(ua) ? 'win' : /iPhone|iPad|Android/i.test(ua) ? 'cel' : /Macintosh/i.test(ua) ? 'mac' : '';
+    if (aqui) { var el = $('plat-' + aqui); el.classList.add('aqui'); el.parentNode.insertBefore(el, $('plat-win').parentNode.querySelector('.plat')); }
+  }
   var c = new URLSearchParams(location.search).get('c');
   var info = c ? lerCodigo(c) : null;
+  montarDownloads(info ? info.produto : 'balcao-certo');
   if (info) montar(info);
   else {
     $('colar').hidden = false;
