@@ -503,7 +503,7 @@ function app() {
     /* ─────────── estado ─────────── */
     pronto: false, rota: 'inicio', menuAberto: false,
     cfg: null, licenca: null, versao: VERSAO, novaVersao: null, urlInstalar: URL_INSTALAR, urlAvaliar: URL_AVALIAR,
-    backupAuto: { suporte: '', pasta: '', erro: '' },
+    backupAuto: { suporte: '', pasta: '', erro: '' }, devolvendo: false,
     produtos: [], clientes: [], fornecedores: [], vendas: [], caixas: [], contas: [], os: [], comandas: [], agenda: [], vales: [], diaAgenda: hojeISO(),
     toastMsg: '', toastTipo: 'ok', _toastT: null,
     modal: null,            // nome do modal aberto
@@ -1102,7 +1102,21 @@ function app() {
      * respeita o desconto da venda (proporcional ao total pago). */
     devolvidoItem(v, idx) { return (v.devolucoes || []).reduce((s, d) => s + (d.itens.find(i => i.idx === idx) || { qtd: 0 }).qtd, 0); },
     totalDevolvido(v) { return r2((v.devolucoes || []).reduce((s, d) => s + d.total, 0)); },
+    /** Custo histórico dos itens já devolvidos (para o lucro/DRE não contar custo de mercadoria que voltou). */
+    custoDevolvido(v) { return r2((v.devolucoes || []).reduce((s, d) => s + d.itens.reduce((a, i) => a + i.qtd * ((v.itens[i.idx] || {}).custo || 0), 0), 0)); },
+    /** Quanto ainda pode ser restituído desta venda: o que foi pago pelos itens, menos o já devolvido. */
+    restituivel(v) { return r2(Math.max(0, (v.total - (v.acrescimo || 0)) - this.totalDevolvido(v))); },
     fatorDevolucao(v) { return v.subtotal ? Math.max(0, Math.min(1, (v.total - (v.acrescimo || 0)) / v.subtotal)) : 1; },
+    /** Valor de uma devolução em centavos: cada item proporcional ao desconto, com teto no restituível; se
+     *  esta devolução completa a venda, leva exatamente o resíduo (R$ 2,00 pagos por 3 itens nunca viram R$ 2,01). */
+    valorDevolucao(v, itens) {
+      const fator = this.fatorDevolucao(v);
+      let cent = itens.reduce((s, i) => s + Math.round(i.qtd * i.preco * fator * 100), 0);
+      const teto = Math.round(this.restituivel(v) * 100);
+      const completa = v.itens.every((it, idx) => this.devolvidoItem(v, idx) + ((itens.find(i => i.idx === idx) || {}).qtd || 0) >= it.qtd - 1e-9);
+      if (completa) cent = teto;
+      return Math.min(cent, teto) / 100;
+    },
     abrirDevolucao(v) {
       if (v.cancelada) return;
       const itens = v.itens.map((i, idx) => ({ idx, nome: i.nome, preco: i.preco, unidade: i.unidade || 'un', maximo: r2(i.qtd - this.devolvidoItem(v, idx)), qtd: '' })).filter(i => i.maximo > 0);
@@ -1110,17 +1124,25 @@ function app() {
       this.form = { venda: v, itens, forma: 'vale', motivo: '', fator: this.fatorDevolucao(v) };
       this.modal = 'devolucao';
     },
-    totalDevolucaoForm() { const f = this.form; if (!f || !f.itens) return 0; return r2(f.itens.reduce((s, i) => s + Math.min(num(i.qtd), i.maximo) * i.preco, 0) * f.fator); },
+    totalDevolucaoForm() { const f = this.form; if (!f || !f.itens || !f.venda) return 0; return this.valorDevolucao(f.venda, f.itens.map(i => ({ idx: i.idx, preco: i.preco, qtd: Math.min(num(i.qtd), i.maximo) }))); },
     novoCodigoVale() { return 'VALE-' + String(this.proximo('vale')).padStart(4, '0'); },
     valePorCodigo(codigo) { const c = String(codigo || '').trim().toUpperCase().replace(/\s+/g, ''); if (!c) return null; return this.vales.find(v => v.codigo.replace(/\s+/g, '') === c && !v.cancelado) || null; },
     valesAbertos() { return this.vales.filter(v => !v.cancelado && v.saldo > 0.001); },
     async registrarDevolucao() {
+      // Trava (Codex r10, P1): duas confirmações em sequência gravavam duas devoluções do mesmo item.
+      if (this.devolvendo) return;
+      this.devolvendo = true;
+      try { await this._registrarDevolucao(); } finally { this.devolvendo = false; }
+    },
+    async _registrarDevolucao() {
       const f = this.form, v = f.venda;
+      if (v.cancelada) { this.toast('Esta venda está cancelada.', 'erro'); return; }
       const itens = f.itens.map(i => ({ idx: i.idx, nome: i.nome, preco: i.preco, qtd: num(i.qtd) })).filter(i => i.qtd > 0);
       if (!itens.length) { this.toast('Informe a quantidade devolvida de pelo menos um item.', 'erro'); return; }
-      const estourado = itens.find(i => i.qtd > f.itens.find(x => x.idx === i.idx).maximo + 0.001);
-      if (estourado) { this.toast('"' + estourado.nome + '": a quantidade passa do que foi vendido.', 'erro'); return; }
-      const total = this.totalDevolucaoForm();
+      // O limite é recalculado AGORA, a partir das devoluções já gravadas — não do que o formulário viu ao abrir.
+      const estourado = itens.find(i => i.qtd > r2(v.itens[i.idx].qtd - this.devolvidoItem(v, i.idx)) + 0.001);
+      if (estourado) { this.toast('"' + estourado.nome + '": a quantidade passa do que ainda pode ser devolvido.', 'erro'); return; }
+      const total = this.valorDevolucao(v, itens);
       if (total <= 0) { this.toast('O valor da devolução ficou zero.', 'erro'); return; }
       const cx = this.caixaAberto();
       if (f.forma === 'dinheiro' && !cx) { this.toast('Para devolver em dinheiro, abra o caixa primeiro.', 'erro'); return; }
@@ -1150,8 +1172,8 @@ function app() {
         + '<div class="c" style="margin-top:8px">Apresente este código no caixa para usar o crédito em novas compras. Não é trocado por dinheiro.</div>';
       this.imprimir(h);
     },
-    devolucoesPeriodo() { const out = []; for (const v of this.vendas) for (const d of (v.devolucoes || [])) if (this.diaLocal(d.data) >= this.periodo.de && this.diaLocal(d.data) <= this.periodo.ate) out.push(d); return out; },
-    lucroVenda(v) { return r2(v.total - (v.acrescimo || 0) - v.itens.reduce((s, i) => s + i.qtd * (i.custo || 0), 0) - this.taxasVenda(v)); },
+    devolucoesPeriodo() { const out = []; for (const v of this.vendas) for (const d of (v.devolucoes || [])) if (this.diaLocal(d.data) >= this.periodo.de && this.diaLocal(d.data) <= this.periodo.ate) out.push(Object.assign(Object.create({ _venda: v }), d)); return out; },
+    lucroVenda(v) { return r2(v.total - (v.acrescimo || 0) - v.itens.reduce((s, i) => s + i.qtd * (i.custo || 0), 0) - this.taxasVenda(v) - this.totalDevolvido(v) + this.custoDevolvido(v)); },
     taxasVenda(v) { return r2(v.pagamentos.reduce((s, p) => { const f = this.cfg.pagamentos.find(x => x.id === p.forma); return s + (f ? p.valor * (f.taxa || 0) / 100 : 0); }, 0)); },
 
     /* ─────────── financeiro ─────────── */
@@ -1216,15 +1238,23 @@ function app() {
       const porCat = {};
       for (const c of desp) porCat[c.categoria || 'Outras'] = r2((porCat[c.categoria || 'Outras'] || 0) + c.valor);
       const despesas = r2(desp.reduce((s, c) => s + c.valor, 0));
-      const liquida = r2(bruta - descontos);
-      const bruto = r2(liquida - cmv - taxas);
-      return { vendas: vs.length, bruta, descontos, liquida, cmv, taxas, bruto, porCat, despesas, lucro: r2(bruto - despesas), margem: liquida ? r2((bruto - despesas) / liquida * 100) : 0 };
+      // Devoluções entram na DATA DA DEVOLUÇÃO: reduzem a receita e devolvem o custo histórico dos itens
+      const devs = this.devolucoesPeriodo();
+      const devolucoes = r2(devs.reduce((s, d) => s + d.total, 0));
+      const cmvDevolvido = r2(devs.reduce((s, d) => s + d.itens.reduce((a, i) => a + i.qtd * ((d._venda.itens[i.idx] || {}).custo || 0), 0), 0));
+      const liquida = r2(bruta - descontos - devolucoes);
+      const cmvLiquido = r2(cmv - cmvDevolvido);
+      const bruto = r2(liquida - cmvLiquido - taxas);
+      return { vendas: vs.length, bruta, descontos, devolucoes, liquida, cmv: cmvLiquido, taxas, bruto, porCat, despesas, lucro: r2(bruto - despesas), margem: liquida ? r2((bruto - despesas) / liquida * 100) : 0 };
     },
     /* Fluxo de caixa realizado: dinheiro que entrou e saiu de fato, por dia. */
     fluxo() {
       const de = this.periodo.de, ate = this.periodo.ate, dias = {};
       const add = (d, campo, v) => { if (d < de || d > ate) return; dias[d] = dias[d] || { dia: d, entradas: 0, saidas: 0 }; dias[d][campo] = r2(dias[d][campo] + v); };
-      for (const v of this.vendas) if (!v.cancelada) for (const p of v.pagamentos) if (p.forma !== 'crediario') add(this.diaLocal(v.data), 'entradas', p.valor - (p.forma === 'dinheiro' ? (v.troco || 0) : 0));
+      for (const v of this.vendas) if (!v.cancelada) {
+        for (const p of v.pagamentos) if (p.forma !== 'crediario' && p.forma !== 'vale') add(this.diaLocal(v.data), 'entradas', p.valor - (p.forma === 'dinheiro' ? (v.troco || 0) : 0)); // vale é crédito, não dinheiro
+        for (const d of (v.devolucoes || [])) if (d.forma === 'dinheiro') add(this.diaLocal(d.data), 'saidas', d.total);
+      }
       for (const c of this.contas) if (c.pagoEm) add(this.diaLocal(c.pagoEm), c.tipo === 'receber' ? 'entradas' : 'saidas', c.valorPago || c.valor);
       let saldo = 0;
       return Object.values(dias).sort((a, b) => a.dia.localeCompare(b.dia)).map(d => { saldo = r2(saldo + d.entradas - d.saidas); return Object.assign(d, { saldo }); });
@@ -1488,7 +1518,9 @@ function app() {
     async iniciarBackupAuto() {
       this.backupAuto.suporte = this.suporteBackupAuto();
       window.BC_pastaBackup = nome => this.definirPastaBackup(nome);
-      window.BC_backupSalvo = (ok, erro) => { if (this._backupPendente) this._backupPendente(ok, erro); };
+      // Cada pedido à ponte leva um id e a resposta volta com ele; os pedidos são enfileirados (um por vez).
+      this._backupPendentes = {}; this._backupFila = Promise.resolve();
+      window.BC_backupSalvo = (ok, erro, id) => { const r = this._backupPendentes[id]; if (r) { delete this._backupPendentes[id]; r(ok, erro); } };
       if (!this.cfg || !this.cfg.backupAuto || !this.cfg.backupAuto.pasta) return;
       this.backupAuto.pasta = this.cfg.backupAuto.pasta;
       if (this.backupAuto.suporte === 'pasta') {
@@ -1523,13 +1555,13 @@ function app() {
       const nome = 'backup-balcao-certo-' + hojeISO() + '.json';
       try {
         if (this.backupAuto.suporte === 'mac') {
-          // a ponte responde em BC_backupSalvo(ok, erro); só anunciamos depois dela (ou falha em 15 s)
-          const ok = await new Promise(resolve => {
-            if (this._backupPendente) this._backupPendente(false, 'substituído por outro backup');
-            const t = setTimeout(() => this._backupPendente && this._backupPendente(false, 'o aplicativo não confirmou a gravação'), 15000);
-            this._backupPendente = (ok, erro) => { clearTimeout(t); this._backupPendente = null; if (!ok) this.backupAuto.erro = erro || 'falhou'; resolve(ok); };
-            window.webkit.messageHandlers.backupSalvar.postMessage({ nome, conteudo: this.conteudoBackup() });
-          });
+          // Serializado: o próximo pedido só sai depois da resposta (ou do tempo limite) do anterior.
+          const ok = await (this._backupFila = this._backupFila.catch(() => {}).then(() => new Promise(resolve => {
+            const id = 'b' + Date.now() + Math.random().toString(36).slice(2, 7);
+            const t = setTimeout(() => window.BC_backupSalvo(false, 'o aplicativo não confirmou a gravação', id), 15000);
+            this._backupPendentes[id] = (ok, erro) => { clearTimeout(t); if (!ok) this.backupAuto.erro = erro || 'falhou'; resolve(ok); };
+            window.webkit.messageHandlers.backupSalvar.postMessage({ id, nome, conteudo: this.conteudoBackup() });
+          })));
           if (!ok) throw new Error(this.backupAuto.erro);
           await this.registrarBackupAuto();
           return true;
@@ -1563,6 +1595,8 @@ function app() {
       } catch (e) { /* sem internet ou site fora: segue normal */ }
     },
     async marcarAvaliacao() { this.cfg.avaliacaoOk = true; await this.salvar('cfg'); },
+    mostrarConviteBackup() { return !!(this.cfg && this.backupAuto.suporte && !(this.cfg.backupAuto && this.cfg.backupAuto.pasta) && this.caixas.some(c => c.fechamento) && (!this.cfg.backupConviteAte || this.cfg.backupConviteAte < agoraISO())); },
+    async adiarConviteBackup() { const d = new Date(); d.setDate(d.getDate() + 3); this.cfg.backupConviteAte = d.toISOString(); await this.salvar('cfg'); },
     async adiarAvaliacao() { const d = new Date(); d.setDate(d.getDate() + 7); this.cfg.avaliacaoAdiadaAte = d.toISOString(); await this.salvar('cfg'); },
     mostrarAvaliacao() { return this.licenciado() && !this.cfg.avaliacaoOk && (!this.cfg.avaliacaoAdiadaAte || this.cfg.avaliacaoAdiadaAte < agoraISO()) && this.vendas.filter(v => !v.cancelada).length >= 3; },
     async exportarBackup() {
@@ -1775,6 +1809,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
       <template x-if="onb.passo === 1">
         <div class="pilha">
           <button class="btn bloco" @click="onb.passo = 2" data-onb-tenho-codigo>🔑 Já comprei e tenho o código de ativação</button>
+          <label class="btn bloco" style="text-align:center">📂 Trocou de computador? Restaurar meus dados de um backup<input type="file" accept=".json" hidden @change="importarBackup($event)" data-onb-restaurar></label>
           <h3>Qual é o seu tipo de negócio?</h3>
           <div class="ramos">
             <template x-for="(r, id) in ramos()" :key="id">
@@ -1845,6 +1880,9 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
       </template>
       <template x-if="mostrarAvaliacao() && rota === 'inicio'">
         <div class="aviso amarelo" style="margin-bottom:14px"><span>⭐</span><span class="espaco">Está gostando do sistema? Uma avaliação na sua compra no Mercado Livre ajuda muito a gente. Se algo não ficou bom, responda a mensagem da compra — a gente resolve.</span><a class="btn peq" :href="urlAvaliar" target="_blank" rel="noopener" @click="marcarAvaliacao()">Avaliar</a><button class="btn peq fantasma" @click="marcarAvaliacao()">Já avaliei</button><button class="btn peq fantasma" @click="adiarAvaliacao()">Agora não</button></div>
+      </template>
+      <template x-if="mostrarConviteBackup() && rota === 'inicio'">
+        <div class="aviso azul" style="margin-bottom:14px"><span>🛡️</span><span class="espaco">Proteja seus dados: escolha uma pasta (OneDrive, Google Drive, Dropbox) e o sistema grava um backup por dia sozinho.</span><button class="btn peq" @click="escolherPastaBackup()">Escolher pasta de backup</button><button class="btn peq fantasma" @click="adiarConviteBackup()">Depois</button></div>
       </template>
       <template x-if="backupAuto.erro === 'reautorizar' && rota === 'inicio'">
         <div class="aviso amarelo" style="margin-bottom:14px"><span>💾</span><span class="espaco" x-text="'O navegador pede sua confirmação para continuar gravando o backup automático em “' + backupAuto.pasta + '”.'"></span><button class="btn peq" @click="reautorizarPastaBackup()">Autorizar</button></div>
@@ -2238,6 +2276,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
                 <tbody>
                   <tr><td>Receita bruta de vendas <span class="fraco small" x-text="'(' + d.vendas + ' vendas)'"></span></td><td class="num" x-text="brl(d.bruta)"></td></tr>
                   <tr><td>(−) Descontos concedidos</td><td class="num vermelho" x-text="brl(-d.descontos)"></td></tr>
+                  <tr x-show="d.devolucoes"><td>(−) Devoluções</td><td class="num vermelho" x-text="brl(-d.devolucoes)"></td></tr>
                   <tr class="b"><td>= Receita líquida</td><td class="num" x-text="brl(d.liquida)"></td></tr>
                   <tr><td>(−) Custo das mercadorias vendidas</td><td class="num vermelho" x-text="brl(-d.cmv)"></td></tr>
                   <tr><td>(−) Taxas de cartão</td><td class="num vermelho" x-text="brl(-d.taxas)"></td></tr>
@@ -2575,7 +2614,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
       <div class="small muted" x-text="form.forma === 'vale' ? 'O cliente recebe um vale com código para usar em novas compras (fica guardado em Financeiro).' : 'O valor sai do caixa aberto e aparece no fechamento.'"></div>
       <div class="linha entre b" style="font-size:20px"><span>Total a devolver</span><span x-text="brl(totalDevolucaoForm())"></span></div>
     </div>
-    <div class="mrod"><button class="btn" @click="verVenda(form.venda)">Voltar</button><button class="btn pri" @click="registrarDevolucao()" data-dev-confirmar>Confirmar devolução</button></div>
+    <div class="mrod"><button class="btn" @click="verVenda(form.venda)">Voltar</button><button class="btn pri" @click="registrarDevolucao()" :disabled="devolvendo" data-dev-confirmar x-text="devolvendo ? 'Gravando…' : 'Confirmar devolução'"></button></div>
   </div></div>
 </template>
 <template x-if="modal === 'valeOk' && form.vale">
