@@ -1475,6 +1475,10 @@ function app() {
       const fonte = w === 'A4' ? '12px' : (w === '58' ? '10px' : '11.5px');
       const html = '<!doctype html><html><head><meta charset="utf-8"><title>Impressão</title><style>@page{' + pagina + '}*{box-sizing:border-box}body{font-family:' + (w === 'A4' ? 'Arial,Helvetica,sans-serif' : '"Courier New",monospace') + ';font-size:' + fonte + ';width:' + corpoW + ';margin:0 auto;color:#000}' +
         '.c{text-align:center}.r{text-align:right}.b{font-weight:bold}.g{font-size:1.25em}hr{border:0;border-top:1px dashed #000;margin:6px 0}table{width:100%;border-collapse:collapse}td,th{vertical-align:top;padding:1px 0;text-align:left}th{border-bottom:1px solid #000}.ass{margin-top:40px;border-top:1px solid #000;text-align:center;padding-top:4px}.box{border:1px solid #000;padding:6px;margin:6px 0}.cols{display:flex;gap:16px}.cols>div{flex:1}h1{font-size:18px;margin:0 0 6px}h2{font-size:14px;margin:10px 0 4px}</style></head><body>' + corpo + '</body></html>';
+      // App nativo do Mac (tools/instaladores/mac): o WebKit não imprime iframe por window.print();
+      // o HTML vai para o diálogo de impressão do macOS pela ponte `imprimir`.
+      const ponte = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.imprimir;
+      if (ponte) { ponte.postMessage(html); return; }
       const ifr = document.createElement('iframe');
       ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
       document.body.appendChild(ifr);
