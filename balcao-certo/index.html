@@ -307,7 +307,24 @@ table.tab tr.clicavel { cursor: pointer; }
 
   async function verificar(codigo) {
     try {
-      const limpo = String(codigo || '').replace(/\s+/g, '');
+      // Aceita o código colado junto com o resto da mensagem (o chat do Mercado Livre
+      // vem com link e instruções antes dele). Candidatos: o texto inteiro sem espaços (código
+      // puro, mesmo quebrado em linhas) e cada trecho "carga.assinatura" encontrado; vale o
+      // primeiro cuja assinatura confere.
+      const bruto = String(codigo || '');
+      const candidatos = [bruto.replace(/\s+/g, '')].concat(bruto.match(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{60,}/g) || []);
+      for (let i = 0; i < candidatos.length; i++) {
+        const r = await verificarUm(candidatos[i]);
+        if (r) return r;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function verificarUm(limpo) {
+    try {
       const [c, s] = limpo.split('.');
       if (!c || !s) return null;
       const carga = deB64u(c);
