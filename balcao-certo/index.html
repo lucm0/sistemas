@@ -567,7 +567,7 @@ function app() {
       c.numMesas = c.numMesas || 12;
       c.taxaServico = c.taxaServico == null ? 10 : c.taxaServico;
       c.garantiaDias = c.garantiaDias == null ? 90 : c.garantiaDias;
-      c.termoOS = c.termoOS || 'O cliente declara estar ciente de que: (1) aparelhos/veículos não retirados em até 90 dias após a conclusão poderão ser descartados ou vendidos para cobrir custos; (2) a garantia cobre apenas o serviço e as peças trocadas, pelo prazo indicado, e não cobre mau uso, quedas, umidade ou violação; (3) o orçamento tem validade de 7 dias.';
+      c.termoOS = c.termoOS || 'O cliente declara estar ciente de que: (1) o orçamento tem validade de 7 dias; (2) a garantia cobre apenas o serviço e as peças trocadas, pelo prazo indicado, e não cobre mau uso, quedas, umidade ou violação; (3) aparelhos/veículos não retirados em até 90 dias após a conclusão e após aviso por escrito (mensagem ou carta) poderão ser considerados abandonados, na forma da lei, respondendo o cliente pelas despesas de guarda.';
     },
     lerRota() {
       const r = (location.hash || '#inicio').slice(1);
