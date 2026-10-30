@@ -458,7 +458,7 @@ const LINK_CURSO = '';
 const LIMITE_DEMO = { produtos: 20, vendas: 30 };
 // Versão do sistema. Sobe junto com site/versao.json: a versão instalada (Windows/Mac) compara as duas
 // na abertura e avisa que há nova versão; a do site se atualiza sozinha.
-const VERSAO = '1.2.1';
+const VERSAO = '1.2.2';
 const URL_VERSAO = 'https://lucm0.github.io/sistemas/versao.json';
 const URL_INSTALAR = 'https://lucm0.github.io/sistemas/bem-vindo/#instalar';
 const URL_AVALIAR = 'https://myaccount.mercadolivre.com.br/my_purchases/list';
@@ -1475,7 +1475,7 @@ function app() {
     minutos(iso) { return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)); },
 
     /* ─────────── confirmações e senha ─────────── */
-    pedirConfirmacao(texto, acao, exigeSenha) { this.confirmacao = { texto, acao, senha: !!(exigeSenha && this.cfg.senhaAdmin) }; this.senhaDigitada = ''; },
+    pedirConfirmacao(texto, acao, exigeSenha) { this.confirmacao = { texto, acao, senha: !!(exigeSenha && this.cfg && this.cfg.senhaAdmin) }; this.senhaDigitada = ''; },   // cfg nulo: aparelho novo restaurando backup na boas-vindas
     async confirmar() {
       const c = this.confirmacao; if (!c) return;
       if (c.senha && this.senhaDigitada !== this.cfg.senhaAdmin) { this.toast('Senha do gerente incorreta.', 'erro'); return; }
