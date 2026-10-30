@@ -174,6 +174,10 @@ table.tab tr.clicavel { cursor: pointer; }
 /* Boas-vindas */
 .boas { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 20% 10%, #ccfbf1, transparent 40%), radial-gradient(circle at 90% 90%, #dbeafe, transparent 40%), var(--bg); }
 .boas .card { max-width: 640px; width: 100%; padding: 28px; }
+/* Celular: o item da grade não pode crescer até o texto mais longo de botão (Chrome do Android encolhia a página). */
+.boas { grid-template-columns: minmax(0, 1fr); }
+.boas .card { justify-self: center; min-width: 0; }
+.boas .btn { white-space: normal; text-align: center; }
 .ramos { display: grid; gap: 8px; }
 .ramos button { display: flex; gap: 12px; align-items: center; text-align: left; border: 2px solid var(--bd); background: #fff; padding: 12px 14px; border-radius: 10px; cursor: pointer; font: inherit; }
 .ramos button.on { border-color: var(--pri); background: var(--pri-bg); }
@@ -454,7 +458,7 @@ const LINK_CURSO = '';
 const LIMITE_DEMO = { produtos: 20, vendas: 30 };
 // Versão do sistema. Sobe junto com site/versao.json: a versão instalada (Windows/Mac) compara as duas
 // na abertura e avisa que há nova versão; a do site se atualiza sozinha.
-const VERSAO = '1.2.0';
+const VERSAO = '1.2.1';
 const URL_VERSAO = 'https://lucm0.github.io/sistemas/versao.json';
 const URL_INSTALAR = 'https://lucm0.github.io/sistemas/bem-vindo/#instalar';
 const URL_AVALIAR = 'https://myaccount.mercadolivre.com.br/my_purchases/list';
@@ -2210,7 +2214,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
               </div>
             </div>
           </template>
-          <div class="card" style="margin-top:14px"><div style="padding:14px 16px"><h2 style="margin:0">Caixas anteriores</h2></div>
+          <div class="card rolagem" style="margin-top:14px"><div style="padding:14px 16px"><h2 style="margin:0">Caixas anteriores</h2></div>
             <table class="tab"><thead><tr><th>Abertura</th><th>Fechamento</th><th>Operador</th><th class="r">Vendido</th><th class="r">Diferença</th><th></th></tr></thead>
               <tbody><template x-for="cx in caixas.filter(c => c.fechamento).slice().reverse().slice(0, 30)" :key="cx.id"><tr><td x-text="dataHora(cx.abertura)"></td><td x-text="dataHora(cx.fechamento)"></td><td x-text="cx.operador"></td><td class="num" x-text="brl(cx.resumo ? cx.resumo.total : 0)"></td><td class="num" :class="Math.abs(cx.valorContado - cx.esperado) > 0.009 ? 'vermelho b' : 'verde'" x-text="brl(cx.valorContado - cx.esperado)"></td><td><button class="btn peq" @click="imprimirFechamento(cx)">🖨️</button></td></tr></template></tbody>
             </table>
@@ -2338,7 +2342,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
             <template x-if="!porDia().length"><div class="fraco">Sem vendas no período.</div></template>
           </div>
           <div class="grid g2" style="margin-top:14px">
-            <div class="card"><div style="padding:14px 16px"><h2 style="margin:0">Produtos mais vendidos</h2></div>
+            <div class="card rolagem"><div style="padding:14px 16px"><h2 style="margin:0">Produtos mais vendidos</h2></div>
               <table class="tab"><thead><tr><th>Produto</th><th class="r">Qtd</th><th class="r">Total</th><th class="r">Lucro</th></tr></thead><tbody><template x-for="p in rankingProdutos()" :key="p.nome"><tr><td x-text="p.nome"></td><td class="num" x-text="qtd(p.qtd)"></td><td class="num b" x-text="brl(p.total)"></td><td class="num verde" x-text="brl(p.lucro)"></td></tr></template></tbody></table>
             </div>
             <div class="pilha">
