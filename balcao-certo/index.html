@@ -458,7 +458,7 @@ const LINK_CURSO = '';
 const LIMITE_DEMO = { produtos: 20, vendas: 30 };
 // Versão do sistema. Sobe junto com site/versao.json: a versão instalada (Windows/Mac) compara as duas
 // na abertura e avisa que há nova versão; a do site se atualiza sozinha.
-const VERSAO = '1.2.2';
+const VERSAO = '1.2.3';
 const URL_VERSAO = 'https://lucm0.github.io/sistemas/versao.json';
 const URL_INSTALAR = 'https://lucm0.github.io/sistemas/bem-vindo/#instalar';
 const URL_AVALIAR = 'https://myaccount.mercadolivre.com.br/my_purchases/list';
@@ -1603,13 +1603,31 @@ function app() {
     async adiarConviteBackup() { const d = new Date(); d.setDate(d.getDate() + 3); this.cfg.backupConviteAte = d.toISOString(); await this.salvar('cfg'); },
     async adiarAvaliacao() { const d = new Date(); d.setDate(d.getDate() + 7); this.cfg.avaliacaoAdiadaAte = d.toISOString(); await this.salvar('cfg'); },
     mostrarAvaliacao() { return this.licenciado() && !this.cfg.avaliacaoOk && (!this.cfg.avaliacaoAdiadaAte || this.cfg.avaliacaoAdiadaAte < agoraISO()) && this.vendas.filter(v => !v.cancelada).length >= 3; },
+    ehCelular() { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)); },
+    /** Celular: abre a tela de compartilhar (WhatsApp, Drive, e-mail). Computador, ou celular sem essa tela: baixa o arquivo. */
     async exportarBackup() {
-      const blob = new Blob([this.conteudoBackup()], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-      a.download = 'backup-balcao-certo-' + hojeISO() + '.json'; document.body.appendChild(a); a.click(); a.remove();
+      const conteudo = this.conteudoBackup(), base = 'backup-balcao-certo-' + hojeISO();
+      if (this.ehCelular() && navigator.share && navigator.canShare) {
+        // O Chrome do Android não compartilha .json; o .txt tem o mesmo conteúdo e a restauração aceita os dois.
+        const opcoes = [new File([conteudo], base + '.json', { type: 'application/json' }), new File([conteudo], base + '.txt', { type: 'text/plain' })];
+        const arq = opcoes.find(f => { try { return navigator.canShare({ files: [f] }); } catch (e) { return false; } });
+        if (arq) {
+          try {
+            await navigator.share({ files: [arq], title: 'Backup do Balcão Certo' });
+            this.cfg.backupEm = agoraISO(); await this.salvar('cfg');
+            this.toast('Backup enviado. Guarde a conversa ou a pasta onde ele ficou.');
+            return;
+          } catch (e) {
+            if (e && e.name === 'AbortError') { this.toast('Backup não enviado. Toque de novo e escolha WhatsApp ou Drive.', 'erro'); return; }
+            // outro erro (permissão, app recusou): segue para o download
+          }
+        }
+      }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: 'application/json' }));
+      a.download = base + '.json'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       this.cfg.backupEm = agoraISO(); await this.salvar('cfg');
-      this.toast('Backup salvo na pasta de Downloads. Guarde uma cópia no pen drive ou na nuvem.');
+      this.toast(this.ehCelular() ? 'Backup salvo nos Downloads do celular. Mande o arquivo para o WhatsApp ou o Drive.' : 'Backup salvo na pasta de Downloads. Guarde uma cópia no pen drive ou na nuvem.');
     },
     importarBackup(ev) {
       const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
@@ -1813,7 +1831,7 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
       <template x-if="onb.passo === 1">
         <div class="pilha">
           <button class="btn bloco" @click="onb.passo = 2" data-onb-tenho-codigo>🔑 Já comprei e tenho o código de ativação</button>
-          <label class="btn bloco" style="text-align:center">📂 Trocou de computador? Restaurar meus dados de um backup<input type="file" accept=".json" hidden @change="importarBackup($event)" data-onb-restaurar></label>
+          <label class="btn bloco" style="text-align:center">📂 Trocou de computador? Restaurar meus dados de um backup<input type="file" accept=".json,.txt,application/json,text/plain" hidden @change="importarBackup($event)" data-onb-restaurar></label>
           <h3>Qual é o seu tipo de negócio?</h3>
           <div class="ramos">
             <template x-for="(r, id) in ramos()" :key="id">
@@ -2428,8 +2446,8 @@ function BCabrirManual(event){event.preventDefault();const w=window.open('','_bl
           </div>
           <div class="card pad">
             <h2>💾 Backup</h2>
-            <p class="muted small">Os dados ficam guardados neste aparelho. Faça backup toda semana e guarde o arquivo no pen drive, no e-mail ou no Google Drive. Para usar em outro computador, faça o backup aqui e restaure lá.</p>
-            <div class="linha"><button class="btn pri" @click="exportarBackup()">⬇️ Fazer backup agora</button><label class="btn">⬆️ Restaurar backup<input type="file" accept=".json" hidden @change="importarBackup($event)"></label><span class="small fraco" x-text="cfg.backupEm ? 'Último backup: ' + dataHora(cfg.backupEm) : 'Nenhum backup feito ainda.'"></span></div>
+            <p class="muted small">Os dados ficam guardados neste aparelho. Faça backup toda semana e guarde o arquivo no pen drive, no e-mail ou no Google Drive. Para usar em outro computador, faça o backup aqui e restaure lá. No celular, o botão abre a tela de compartilhar: mande para o WhatsApp ou o Google Drive.</p>
+            <div class="linha"><button class="btn pri" @click="exportarBackup()">⬇️ Fazer backup agora</button><label class="btn">⬆️ Restaurar backup<input type="file" accept=".json,.txt,application/json,text/plain" hidden @change="importarBackup($event)"></label><span class="small fraco" x-text="cfg.backupEm ? 'Último backup: ' + dataHora(cfg.backupEm) : 'Nenhum backup feito ainda.'"></span></div>
             <div style="margin-top:14px;border-top:1px solid var(--bd);padding-top:12px">
               <h3>Backup automático</h3>
               <template x-if="!backupAuto.suporte"><p class="muted small">Neste navegador não dá para gravar numa pasta sozinho. No computador, use o sistema instalado (Windows ou Mac) ou o Chrome/Edge — e, no celular, continue com o backup manual.</p></template>
