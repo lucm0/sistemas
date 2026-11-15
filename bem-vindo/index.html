@@ -62,7 +62,7 @@ details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
     <textarea id="campoCodigo" placeholder="Cole o código completo"></textarea>
     <p id="erroCodigo" class="erro" hidden></p>
     <p><button class="btn" id="btnColar" type="button">Ativar e abrir o sistema</button></p>
-    <p class="muted" style="font-size:13px">Ainda não comprou? Dá para conhecer o sistema sem código, em modo demonstração: <a href="../balcao-certo/">Balcão Certo</a> · <a href="../financas-familia/">Finanças da Família</a>.</p>
+    <p class="muted" style="font-size:13px">Ainda não comprou? Dá para conhecer o sistema sem código, em modo demonstração: <a href="../balcao-certo/">Balcão Certo</a> · <a href="../financas-familia/">Finanças da Família</a> · <a href="../financeiro-mei/">Financeiro MEI</a>.</p>
   </section>
 
   <section class="card" id="instalar">
@@ -118,9 +118,9 @@ details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
 (function () {
   // Página estática: tudo acontece aqui no navegador. Sem rede, sem chave privada — a assinatura do
   // código é conferida pelo próprio sistema ao abrir; aqui só se LÊ a carga para montar a tela.
-  var VIDEO = { 'balcao-certo': '', 'financas-familia': '' }; // preencher quando os vídeos existirem
-  var APPS = { 'balcao-certo': '../balcao-certo/', 'financas-familia': '../financas-familia/' };
-  var NOMES = { 'balcao-certo': 'Balcão Certo', 'financas-familia': 'Finanças da Família' };
+  var VIDEO = { 'balcao-certo': '', 'financas-familia': '', 'financeiro-mei': '' }; // preencher quando os vídeos existirem
+  var APPS = { 'balcao-certo': '../balcao-certo/', 'financas-familia': '../financas-familia/', 'financeiro-mei': '../financeiro-mei/' };
+  var NOMES = { 'balcao-certo': 'Balcão Certo', 'financas-familia': 'Finanças da Família', 'financeiro-mei': 'Financeiro MEI' };
   var RAMOS = { loja: 'Loja', roupas: 'Loja de roupas e calçados', assistencia: 'Assistência técnica', oficina: 'Oficina', restaurante: 'Restaurante', salao: 'Salão de beleza' };
   var $ = function (id) { return document.getElementById(id); };
 
@@ -137,7 +137,7 @@ details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
     if (!m) return null;
     try {
       var p = deB64u(m[1]).split('|');
-      var produto = p[0] === 'BC1' ? 'balcao-certo' : p[0] === 'FF1' ? 'financas-familia' : null;
+      var produto = { BC1: 'balcao-certo', FF1: 'financas-familia', FM1: 'financeiro-mei' }[p[0]] || null;
       if (!produto || p.length < 4) return null;
       return { codigo: m[1] + '.' + m[2], produto: produto, pedido: p[1], nome: p[2], ramo: p[4] || '' };
     } catch (e) { return null; }
@@ -148,7 +148,7 @@ details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
   function montar(info) {
     var nome = NOMES[info.produto];
     $('titulo').textContent = 'Bem-vindo ao ' + nome;
-    $('logo').textContent = info.produto === 'financas-familia' ? 'ff' : 'BC';
+    $('logo').textContent = { 'financas-familia': 'ff', 'financeiro-mei': 'fm' }[info.produto] || 'BC';
     var ola = primeiroNome(info.nome) ? 'Olá, ' + primeiroNome(info.nome) + '! ' : '';
     $('subtitulo').textContent = ola + 'Obrigado pela compra. Aqui está tudo o que você precisa para começar.';
     var edicao = info.ramo && RAMOS[info.ramo] ? ' — edição ' + RAMOS[info.ramo] : '';
@@ -156,8 +156,8 @@ details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
     $('btnAtivar').href = urlAtivar(info);
     $('codigo').textContent = info.codigo;
     $('ativar').hidden = false; $('colar').hidden = true;
-    if (info.produto === 'financas-familia') {
-      $('linkManual').href = '../financas-familia/#ajuda'; $('linkManual').textContent = 'Abrir "Como usar"';
+    if (info.produto !== 'balcao-certo') {
+      $('linkManual').href = APPS[info.produto] + '#ajuda'; $('linkManual').textContent = 'Abrir "Como usar"';
       $('tituloLicenca').textContent = '5. Sua licença';
     }
     if (VIDEO[info.produto]) { $('linkVideo').href = VIDEO[info.produto]; $('video').hidden = false; $('tituloManual').textContent = '4. Manual de uso'; $('tituloSuporte').textContent = '5. Suporte'; $('tituloLicenca').textContent = '6. Sua licença'; }
@@ -165,7 +165,8 @@ details summary{cursor:pointer;font-weight:600;font-size:15px;margin:6px 0}
 
   // Downloads conforme o produto, e a plataforma deste aparelho vem primeiro.
   var DL = { 'balcao-certo': { win: '../download/BalcaoCerto-Setup.exe', mac: '../download/BalcaoCerto-Mac.zip', cel: '../balcao-certo/' },
-             'financas-familia': { win: '../download/FinancasFamilia-Setup.exe', mac: '../download/FinancasFamilia-Mac.zip', cel: '../financas-familia/' } };
+             'financas-familia': { win: '../download/FinancasFamilia-Setup.exe', mac: '../download/FinancasFamilia-Mac.zip', cel: '../financas-familia/' },
+             'financeiro-mei': { win: '../download/FinanceiroMEI-Setup.exe', mac: '../download/FinanceiroMEI-Mac.zip', cel: '../financeiro-mei/' } };
   function montarDownloads(produto) {
     var d = DL[produto] || DL['balcao-certo'];
     $('dlWin').href = d.win; $('dlMac').href = d.mac; $('abrirCel').href = d.cel;
